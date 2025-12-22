@@ -13,9 +13,12 @@ app.get('/', (req, res) => {
 let jogadores = {}; 
 let salasData = [];
 let jogoAndando = false;
-let botInterval = null; // O relógio dos bots
+let ordemTurno = [];
+let turnoIndex = 0;
+let timerTurno = null;
+let faseAtual = 1;
 
-// Função para criar as salas
+// Função Auxiliar: Cria as salas
 function iniciarSalas(qtd) {
     let conteudos = ['chave'];
     let qtdGas = Math.max(1, Math.floor(qtd * 0.2));
@@ -33,15 +36,74 @@ function iniciarSalas(qtd) {
     }));
 }
 
-// Lógica para processar a entrada em uma sala (Humano ou Bot)
-function processarEntrada(idSala, idJogador) {
+// === LÓGICA DE TURNOS ===
+
+function processarProximoTurno() {
     if(!jogoAndando) return;
+    clearTimeout(timerTurno);
 
+    // Verifica se acabaram os turnos (Fim da Rodada -> Explosão)
+    if(turnoIndex >= ordemTurno.length) {
+        io.emit('mensagem', { texto: "⚠️ ASSASSINO MIRANDO...", cor: "orange" });
+        setTimeout(faseExplosao, 2000);
+        return;
+    }
+
+    let jogadorAtual = ordemTurno[turnoIndex];
+    
+    // Se o jogador morreu ou desconectou, pula
+    if(!jogadorAtual || !jogadorAtual.vivo) {
+        turnoIndex++;
+        processarProximoTurno();
+        return;
+    }
+
+    // Avisa todos de quem é a vez
+    io.emit('mudancaDeTurno', { 
+        idJogador: jogadorAtual.id, 
+        nome: jogadorAtual.nome,
+        tempo: 10
+    });
+
+    if(jogadorAtual.ehBot) {
+        // Lógica do Bot: Espera um pouco e joga
+        timerTurno = setTimeout(() => {
+            jogadaDoBot(jogadorAtual);
+        }, 1500); // Bot demora 1.5s para "pensar"
+    } else {
+        // Lógica do Humano: Espera 10s, se não jogar, joga automático
+        timerTurno = setTimeout(() => {
+            io.emit('mensagem', { texto: `${jogadorAtual.nome} DEMOROU!`, cor: "red" });
+            jogadaDoBot(jogadorAtual); // Auto-escolha
+        }, 10000);
+    }
+}
+
+function jogadaDoBot(jogador) {
+    if(!jogoAndando) return;
+    let salasLivres = salasData.filter(s => !s.bloqueada);
+    
+    if(salasLivres.length > 0) {
+        let escolha = salasLivres[Math.floor(Math.random() * salasLivres.length)];
+        resolverEntrada(escolha.id, jogador.id);
+    } else {
+        // Sem salas? Pula
+        turnoIndex++;
+        processarProximoTurno();
+    }
+}
+
+function resolverEntrada(idSala, idJogador) {
+    if(!jogoAndando) return;
+    
     let sala = salasData.find(s => s.id === idSala);
-    let jogador = jogadores[idJogador];
+    let jogador = jogadores[idJogador] || ordemTurno.find(j => j.id === idJogador);
 
-    // Verifica se pode entrar
-    if(sala && !sala.bloqueada && jogador && jogador.vivo && !jogador.temChave) {
+    // Validação
+    if(sala && !sala.bloqueada && jogador && jogador.vivo) {
+        // Para o timer (pois jogou)
+        clearTimeout(timerTurno);
+
         sala.bloqueada = true;
         sala.ocupante = jogador.nome;
         jogador.sala = idSala;
@@ -53,112 +115,147 @@ function processarEntrada(idSala, idJogador) {
 
         if(jogador.vidas <= 0) jogador.vivo = false;
 
-        // Avisa todo mundo
-        io.emit('salaOcupada', { 
-            idSala: idSala, 
-            jogador: jogador, 
-            efeito: sala.tipo 
-        });
+        // Atualiza Front
+        io.emit('salaOcupada', { idSala: idSala, jogador: jogador, efeito: sala.tipo });
+        io.emit('atualizarLista', Object.values(jogadores));
+
+        // Segue o jogo
+        turnoIndex++;
+        setTimeout(processarProximoTurno, 1000); // Pequena pausa pra ver o efeito
     }
 }
 
-io.on('connection', (socket) => {
-    console.log('Novo jogador:', socket.id);
+function faseExplosao() {
+    if(!jogoAndando) return;
 
-    // Jogador entra
+    // Acha quem pode explodir (na sala, vivo, sem chave)
+    let alvos = ordemTurno.filter(j => j.vivo && j.sala && !j.temChave);
+    
+    if(alvos.length > 0) {
+        let vitima = alvos[Math.floor(Math.random() * alvos.length)];
+        vitima.vivo = false;
+        vitima.vidas = 0;
+        
+        io.emit('efeitoExplosao', { 
+            idSala: vitima.sala, 
+            nome: vitima.nome 
+        });
+        io.emit('mensagem', { texto: `💥 ${vitima.nome} ELIMINADO!`, cor: "red" });
+    } else {
+        io.emit('mensagem', { texto: "ASSASSINO NÃO ACHOU NINGUÉM!", cor: "yellow" });
+    }
+
+    io.emit('atualizarLista', Object.values(jogadores));
+
+    // Verifica Vencedor ou Próxima Fase
+    let vivos = Object.values(jogadores).filter(j => j.vivo);
+    
+    setTimeout(() => {
+        if(vivos.length <= 1) {
+            jogoAndando = false;
+            let campeao = vivos[0] ? vivos[0] : { nome: "NINGUÉM", tipo: "bot" };
+            io.emit('fimDeJogo', campeao);
+        } else {
+            // Nova Rodada/Fase
+            iniciarNovaRodada(vivos);
+        }
+    }, 3000);
+}
+
+function iniciarNovaRodada(sobreviventes) {
+    faseAtual++;
+    // Reseta status para nova rodada (mantem vidas? no seu original resetava vidas pra 2)
+    sobreviventes.forEach(j => {
+        j.vidas = 2;
+        j.temChave = false;
+        j.sala = null;
+    });
+    
+    // Atualiza lista global
+    jogadores = {};
+    sobreviventes.forEach(j => jogadores[j.id] = j);
+    
+    let lista = Object.values(jogadores);
+    salasData = iniciarSalas(lista.length);
+    ordemTurno = lista.sort(() => Math.random() - 0.5);
+    turnoIndex = 0;
+
+    io.emit('novaRodada', { 
+        fase: faseAtual, 
+        salas: salasData, 
+        jogadores: lista 
+    });
+    
+    setTimeout(processarProximoTurno, 1000);
+}
+
+// === CONEXÃO ===
+
+io.on('connection', (socket) => {
+    console.log('Conectou:', socket.id);
+
     socket.on('entrar', (dados) => {
         jogadores[socket.id] = {
             id: socket.id,
             nome: dados.nome,
-            tipo: dados.tipo, 
-            vidas: 2,
-            temChave: false,
-            sala: null,
-            vivo: true,
-            ehBot: false
+            tipo: dados.tipo,
+            vidas: 2, temChave: false, sala: null, vivo: true, ehBot: false
         };
         io.emit('atualizarLista', Object.values(jogadores));
     });
 
-    // Iniciar Jogo (Com Bots!)
     socket.on('iniciarJogo', () => {
-        if(jogoAndando) return; // Já começou
+        if(jogoAndando) return;
 
-        // 1. Criar Bots até completar 20 jogadores
-        let qtdAtual = Object.values(jogadores).length;
-        let botsParaCriar = 20 - qtdAtual;
-
-        for(let i = 1; i <= botsParaCriar; i++) {
-            let botId = `bot-${Date.now()}-${i}`; // ID único pro bot
-            jogadores[botId] = {
-                id: botId,
-                nome: `Bot ${i}`,
-                tipo: 'bot', // Cor cinza/padrão no CSS
-                vidas: 2,
-                temChave: false,
-                sala: null,
-                vivo: true,
-                ehBot: true
+        // Preencher com Bots
+        let lista = Object.values(jogadores);
+        let qtdFaltante = 20 - lista.length;
+        for(let i=1; i<=qtdFaltante; i++) {
+            let idBot = `bot-${Date.now()}-${i}`;
+            jogadores[idBot] = {
+                id: idBot, nome: `Bot ${i}`, tipo: 'bot',
+                vidas: 2, temChave: false, sala: null, vivo: true, ehBot: true
             };
         }
 
-        // 2. Preparar Salas
+        // Setup Inicial
         let listaCompleta = Object.values(jogadores);
         salasData = iniciarSalas(listaCompleta.length);
+        ordemTurno = listaCompleta.sort(() => Math.random() - 0.5);
+        turnoIndex = 0;
         jogoAndando = true;
+        faseAtual = 1;
 
-        // Avisa que começou com a lista nova (incluindo bots)
-        io.emit('atualizarLista', listaCompleta);
         io.emit('inicioDePartida', { salas: salasData, jogadores: listaCompleta });
-
-        // 3. Ligar o "Cérebro dos Bots"
-        if(botInterval) clearInterval(botInterval);
-        
-        botInterval = setInterval(() => {
-            if(!jogoAndando) return clearInterval(botInterval);
-
-            // Filtra bots vivos que ainda não jogaram na rodada (não têm sala)
-            let botsDisponiveis = Object.values(jogadores).filter(j => 
-                j.ehBot && j.vivo && !j.temChave && j.sala === null
-            );
-
-            if(botsDisponiveis.length > 0) {
-                // Escolhe um bot aleatório para jogar agora
-                let botDaVez = botsDisponiveis[Math.floor(Math.random() * botsDisponiveis.length)];
-                
-                // Escolhe uma sala vazia aleatória
-                let salasLivres = salasData.filter(s => !s.bloqueada);
-                
-                if(salasLivres.length > 0) {
-                    let salaEscolhida = salasLivres[Math.floor(Math.random() * salasLivres.length)];
-                    processarEntrada(salaEscolhida.id, botDaVez.id);
-                }
-            } else {
-                // Se não tem bots pra jogar, checa se o jogo acabou ou algo assim
-                // (Aqui simplificado para apenas rodar)
-            }
-        }, 1500); // Um bot joga a cada 1.5 segundos
+        setTimeout(processarProximoTurno, 1000);
     });
 
-    // Humano clica na sala
-    socket.on('tentarEntrar', (idSala) => {
-        processarEntrada(idSala, socket.id);
+    socket.on('jogarTurno', (idSala) => {
+        // Verifica se é a vez desse socket
+        let jogadorDaVez = ordemTurno[turnoIndex];
+        if(jogadorDaVez && jogadorDaVez.id === socket.id) {
+            resolverEntrada(idSala, socket.id);
+        }
     });
 
     socket.on('disconnect', () => {
-        delete jogadores[socket.id];
-        // Se não tiver mais humanos, reseta o jogo pra economizar memória
-        if(Object.values(jogadores).filter(j => !j.ehBot).length === 0) {
+        // Se o jogo não começou, remove da lista. Se começou, marca como morto no proximo turno.
+        if(jogadores[socket.id]) {
+            jogadores[socket.id].vivo = false;
+            delete jogadores[socket.id];
+        }
+        io.emit('atualizarLista', Object.values(jogadores));
+        
+        // Se ficar vazio, reseta
+        let humanos = Object.values(jogadores).filter(j => !j.ehBot);
+        if(humanos.length === 0) {
             jogoAndando = false;
             jogadores = {};
-            if(botInterval) clearInterval(botInterval);
-        } else {
-            io.emit('atualizarLista', Object.values(jogadores));
         }
     });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`SERVIDOR COM BOTS RODANDO NA PORTA: ${PORT}`);
+  console.log(`SERVIDOR TURN-BASED NA PORTA: ${PORT}`);
 });
