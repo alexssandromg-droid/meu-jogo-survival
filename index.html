@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Survival Royale Online</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        /* (MANTIVE SEU CSS ORIGINAL INTACTO) */
+        body { background-color: #050505; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; height: 100vh; overflow: hidden; user-select: none; }
+        #header { width: 100%; padding: 10px 20px; background: #111; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; box-sizing: border-box; height: 60px; }
+        .btn-back-header { background: #333; color: white; border: 1px solid #555; padding: 5px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-right: 15px; transition: 0.2s; }
+        .btn-back-header:hover { background: #d32f2f; border-color: red; }
+        .stat-box { font-size: 16px; font-weight: bold; }
+        #main-container { display: flex; width: 100%; height: calc(100vh - 60px); }
+        #sidebar { width: 280px; background: #0a0a0a; border-right: 1px solid #222; overflow-y: auto; padding: 10px; font-size: 12px; }
+        .player-item { padding: 5px 8px; margin-bottom: 4px; background: #1a1a1a; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid transparent; transition: all 0.3s; }
+        .player-item.p1 { border-left-color: #00e676; background: #002211; }
+        .player-item.p2 { border-left-color: #00b0ff; background: #001122; }
+        .player-item.p3 { border-left-color: #d500f9; background: #2a0033; }
+        .player-item.p4 { border-left-color: #ffea00; background: #333000; }
+        .player-item.dead { opacity: 0.3; text-decoration: line-through; background: #300; }
+        .player-item.safe { border: 1px solid gold; background: #222; opacity: 0.8; }
+        #game-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px; background: radial-gradient(circle at center, #111 0%, #000 100%); }
+        #message-box { font-size: 20px; font-weight: bold; margin-bottom: 10px; height: 30px; text-align: center; text-shadow: 0 2px 5px black; color: white; }
+        #rooms-grid { display: grid; gap: 10px; width: 100%; max-width: 800px; overflow-y: auto; max-height: 85vh; padding: 10px; }
+        .room-btn { aspect-ratio: 1; background: #1e1e1e; border: 1px solid #333; border-radius: 8px; color: #555; cursor: pointer; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.1s; }
+        .room-btn:hover { background: #2a2a2a; border-color: #666; }
+        .room-btn.taken { cursor: not-allowed; border-color: #444; background: #111; }
+        .room-btn.gas { background: #2e1e05 !important; border-color: #d35400 !important; }
+        .room-btn.life { background: #052e05 !important; border-color: #27ae60 !important; }
+        .room-btn.key { background: #2e2805 !important; border-color: #f1c40f !important; box-shadow: 0 0 10px #f1c40f inset; }
+        .room-content { font-size: 28px; }
+        .room-number { font-size: 16px; font-weight: bold; color: white; background: rgba(0, 0, 0, 0.6); padding: 1px 5px; border-radius: 4px; position: absolute; top: 4px; left: 6px; }
+        .occupant-name { font-size: 10px; margin-top: 5px; color: #aaa; white-space: nowrap; overflow: hidden; max-width: 90%; font-weight: bold; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
+        .names-row { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center; }
+        input[type="text"].name-input { padding: 10px; font-size: 16px; text-align: center; border-radius: 5px; background: #111; color: white; text-transform: uppercase; width: 200px; }
+        .btn-action { padding: 15px 40px; font-size: 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 10px; text-transform: uppercase; box-shadow: 0 0 15px rgba(0,255,100,0.1); }
+        .btn-start { background: #00e676; color: black; }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <div style="display:flex; align-items:center;">
+            <div class="stat-box">VIVOS: <span id="alive-txt">0</span></div>
+        </div>
+        <div id="message-box">AGUARDANDO JOGADORES...</div>
+    </div>
+
+    <div id="main-container">
+        <div id="sidebar">
+            <div style="padding:5px; text-align:center; border-bottom:1px solid #333; color:#777; margin-bottom:5px;">JOGADORES ONLINE</div>
+            <div id="players-list"></div>
+        </div>
+
+        <div id="game-area">
+            <div id="rooms-grid"></div>
+        </div>
+    </div>
+
+    <div id="overlay">
+        <h1 style="font-size:40px; color:gold; margin:0 0 10px 0;">SURVIVAL ROYALE ONLINE</h1>
+        <h3 style="color:#777;">DIGITE SEU NOME</h3>
+        
+        <div class="names-row">
+            <input type="text" id="my-name" class="name-input" placeholder="SEU NOME" maxlength="10">
+            <select id="my-color" class="name-input" style="width: 100px;">
+                <option value="p1">Verde</option>
+                <option value="p2">Azul</option>
+                <option value="p3">Roxo</option>
+                <option value="p4">Amarelo</option>
+            </select>
+        </div>
+        
+        <button id="btn-login" class="btn-action btn-start" onclick="entrarNoServer()">ENTRAR</button>
+        <br><br>
+        <button id="btn-start-game" class="btn-action" style="background:#ff9800; display:none;" onclick="pedirInicio()">INICIAR JOGO (HOST)</button>
+    </div>
+
+    <script>
+        const socket = io(); // Conecta ao servidor
+        let euSouHost = false;
+
+        // Sons Simples
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playTone(f, t, d) {
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime);
+            g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d);
+            o.connect(g); g.connect(audioCtx.destination);
+            o.start(); o.stop(audioCtx.currentTime + d);
+        }
+
+        // ================= CLIENTE LOGIC =================
+
+        function entrarNoServer() {
+            const nome = document.getElementById('my-name').value;
+            const cor = document.getElementById('my-color').value;
+            if(!nome) return alert("Digite um nome!");
+
+            socket.emit('entrar', { nome: nome, tipo: cor });
+            
+            document.getElementById('btn-login').style.display = 'none';
+            document.querySelector('.names-row').style.display = 'none';
+            document.querySelector('h3').innerText = "AGUARDANDO O HOST INICIAR...";
+        }
+
+        function pedirInicio() {
+            socket.emit('iniciarJogo');
+        }
+
+        // 1. Receber lista de jogadores atualizada
+        socket.on('atualizarLista', (jogadores) => {
+            renderizarLista(jogadores);
+            document.getElementById('alive-txt').innerText = jogadores.filter(j=>j.vivo).length;
+
+            // Se for o primeiro jogador, libera botão de start
+            if(jogadores.length > 0 && jogadores[0].id === socket.id) {
+                document.getElementById('btn-start-game').style.display = 'inline-block';
+            }
+        });
+
+        // 2. O Jogo Começou!
+        socket.on('inicioDePartida', (dados) => {
+            document.getElementById('overlay').style.display = 'none';
+            renderizarGrid(dados.salas);
+            playTone(600, 'sine', 0.5);
+        });
+
+        // 3. Alguém clicou numa sala
+        socket.on('salaOcupada', (dados) => {
+            let btn = document.getElementById(`room-${dados.idSala}`);
+            let icon = document.getElementById(`icon-${dados.idSala}`);
+            let nome = document.getElementById(`name-${dados.idSala}`);
+
+            btn.classList.add('taken');
+            
+            // Cor da borda baseada no time
+            let cor = '#555';
+            if(dados.jogador.tipo === 'p1') cor = '#00e676';
+            if(dados.jogador.tipo === 'p2') cor = '#00b0ff';
+            if(dados.jogador.tipo === 'p3') cor = '#d500f9';
+            if(dados.jogador.tipo === 'p4') cor = '#ffea00';
+            btn.style.borderColor = cor;
+
+            nome.innerText = dados.jogador.nome;
+
+            // Efeitos
+            if(dados.efeito === 'gas') {
+                btn.classList.add('gas'); icon.innerText = '☠️'; playTone(150, 'sawtooth', 0.4);
+            } else if(dados.efeito === 'vida') {
+                btn.classList.add('life'); icon.innerText = '🟢'; playTone(800, 'triangle', 0.2);
+            } else if(dados.efeito === 'chave') {
+                btn.classList.add('key'); icon.innerText = '🔑'; playTone(1200, 'sine', 0.5);
+            } else {
+                icon.innerText = '😐'; playTone(600, 'sine', 0.1);
+            }
+        });
+
+        // Funções de Renderização
+        function renderizarLista(lista) {
+            const div = document.getElementById('players-list');
+            div.innerHTML = '';
+            lista.forEach(p => {
+                let el = document.createElement('div');
+                el.className = `player-item ${p.tipo}`;
+                if(!p.vivo) el.classList.add('dead');
+                if(p.temChave) el.classList.add('safe');
+                el.innerHTML = `<div>${p.nome}</div><div>${"❤️".repeat(p.vidas)}</div>`;
+                div.appendChild(el);
+            });
+        }
+
+        function renderizarGrid(salas) {
+            const grid = document.getElementById('rooms-grid');
+            grid.innerHTML = '';
+            let cols = Math.min(5, salas.length);
+            grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+
+            salas.forEach(sala => {
+                let btn = document.createElement('button');
+                btn.className = 'room-btn';
+                btn.id = `room-${sala.id}`;
+                btn.onclick = () => socket.emit('tentarEntrar', sala.id);
+                btn.innerHTML = `
+                    <div class="room-number">${sala.id}</div>
+                    <div class="room-content" id="icon-${sala.id}">🚪</div>
+                    <div class="occupant-name" id="name-${sala.id}"></div>
+                `;
+                grid.appendChild(btn);
+            });
+        }
+    </script>
+</body>
+</html>
