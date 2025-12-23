@@ -175,12 +175,14 @@
         }
         function iniciarJogo(){socket.emit('iniciarJogo');}
 
-        // Se eu for o assassino
+        // --- PAPEIS ---
         socket.on('seuPapel', (role) => {
             if(role === 'assassin') {
                 souAssassino = true;
-                // Aviso visual no meu nome
-                alert("VOCÊ É O ASSASSINO! MATE ALGUÉM NA SUA VEZ.");
+                alert("VOCÊ AGORA É O ASSASSINO! MATE 1 JOGADOR.");
+            } else {
+                if(souAssassino) alert("VOCÊ PERDEU A FACA!");
+                souAssassino = false;
             }
         });
 
@@ -198,7 +200,6 @@
             jogadores.forEach(p=>{
                 let d=document.createElement('div');d.className=`player-item ${p.tipo}`;d.id=`plist-${p.id}`;
                 
-                // Marca o assassino (apenas pra mim mesmo)
                 if(souAssassino && p.id === meuId) {
                     d.style.border = "2px solid red";
                     d.innerHTML = `<div>${p.nome} (VOCÊ 🔪)</div>`;
@@ -212,7 +213,6 @@
                 
                 let botoes = `<div style="font-size:10px">${st}</div>`;
                 
-                // BOTÃO DE MATAR (Aparece se: Sou assassino, Minha Vez, Alvo Vivo, Alvo não sou eu)
                 if(souAssassino && minhaVez && p.vivo && p.id !== meuId) {
                     botoes += `<button class="kill-btn" onclick="matarJogador('${p.id}')">MATAR</button>`;
                 }
@@ -227,16 +227,19 @@
             document.getElementById('main-menu').style.display='none';document.getElementById('game-interface').style.display='flex';
             renderizarGrid(d.salas);
         });
-        socket.on('novaRodada',(d)=>{renderizarGrid(d.salas);document.getElementById('message-box').innerText=`RODADA ${d.fase}`;});
+        
+        socket.on('novaRodada',(d)=>{
+            souAssassino = false; 
+            renderizarGrid(d.salas);
+            document.getElementById('message-box').innerText=`RODADA ${d.fase}`;
+        });
 
         socket.on('mudancaDeTurno',(d)=>{
             minhaVez=(d.idJogador===meuId); clearInterval(timerVisual);
             document.querySelectorAll('.player-item').forEach(e=>e.classList.remove('turn'));
             if(document.getElementById(`plist-${d.idJogador}`))document.getElementById(`plist-${d.idJogador}`).classList.add('turn');
             
-            // Força atualizar lista para mostrar/esconder botões de matar
-            // O servidor não manda lista na mudança de turno pra poupar dados, então simulamos update visual se formos o assassino
-            if(souAssassino) socket.emit('pedirListaUpdate'); // Hack simples: na v2 idealmente faria local
+            if(souAssassino) socket.emit('pedirListaUpdate'); 
 
             let t=d.tempo; document.getElementById('timer-txt').innerText=t;
             let msg=document.getElementById('message-box');
@@ -273,7 +276,6 @@
         socket.on('mensagem',(d)=>{let b=document.getElementById('message-box');b.innerText=d.texto;b.style.color=d.cor;});
         socket.on('efeitoExplosao',(d)=>{let b=document.getElementById(`room-${d.idSala}`);if(b){b.classList.add('exploded');document.getElementById(`icon-${d.idSala}`).innerText='💥';SFX.explode();}});
         socket.on('efeitoKill',(d)=>{ 
-            // Efeito visual na lista quando alguém é assassinado
             let el = document.getElementById(`plist-${d.idVitima}`);
             if(el) { el.style.backgroundColor = "red"; setTimeout(()=>el.style.backgroundColor="#151515", 500); }
             SFX.explode();
@@ -281,7 +283,7 @@
 
         socket.on('fimDeJogo',(d)=>{
             document.getElementById('victory-screen').style.display='flex';document.getElementById('winner-name').innerText=d.campeao.nome;SFX.win();
-            souAssassino = false; // Reset
+            souAssassino = false; 
         });
 
         function renderizarGrid(salas){
