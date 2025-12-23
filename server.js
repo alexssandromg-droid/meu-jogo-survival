@@ -26,17 +26,18 @@ let timerTurno = null;
 let faseAtual = 1;
 let hallDaFama = [];
 
-// Variáveis Votação e Apostas
+// Votação e Apostas
 let votosComputados = {}; 
 let jaVotaram = [];
-let apostas = {}; // { idApostador: idCandidatoEscolhido }
+let apostas = {}; 
 
-// Variáveis Tabuleiro
-let boardAtivo = false;
-let boardPlayers = []; 
-let boardPositions = {};
-let boardTurn = 0; 
-const BOARD_SIZE = 20;
+// === VARIÁVEIS DOS MINIGAMES ===
+let minigameAtivo = false;
+let tipoMinigame = null; // 'BOARD', 'MEMORY', 'REFLEX', 'CLICKER', 'MATH'
+let duelistas = []; // [p1, p2]
+
+// Estado Específico de cada jogo
+let mgState = {}; 
 
 // === AUXILIARES ===
 function iniciarSalas(qtdJogadores) {
@@ -64,19 +65,16 @@ function atualizarContadorOnline() {
     io.emit('jogadoresOnline', io.engine.clientsCount);
 }
 
-// === FLUXO DO JOGO ===
+// === FLUXO PRINCIPAL ===
 
 function processarProximoTurno() {
-    if(!jogoAndando || boardAtivo) return;
+    if(!jogoAndando || minigameAtivo) return;
     clearTimeout(timerTurno);
 
     if(turnoIndex >= ordemTurno.length) {
         let vivos = Object.values(jogadores).filter(j => j.vivo);
-        if(vivos.length > 1) {
-            iniciarFaseVotacao(null);
-        } else {
-            faseExplosao(null); 
-        }
+        if(vivos.length > 1) iniciarFaseVotacao(null);
+        else faseExplosao(null); 
         return;
     }
 
@@ -87,9 +85,7 @@ function processarProximoTurno() {
         return;
     }
 
-    io.emit('mudancaDeTurno', { 
-        idJogador: jogadorAtual.id, nome: jogadorAtual.nome, tempo: 10
-    });
+    io.emit('mudancaDeTurno', { idJogador: jogadorAtual.id, nome: jogadorAtual.nome, tempo: 10 });
 
     if(jogadorAtual.ehBot) {
         timerTurno = setTimeout(() => { jogadaDoBot(jogadorAtual); }, gameConfig.velocidadeBot);
@@ -136,16 +132,13 @@ function resolverEntrada(idSala, idJogador) {
     }
 }
 
-// 2. FASE DE VOTAÇÃO
+// 2. VOTAÇÃO
 function iniciarFaseVotacao(empatados) {
     votosComputados = {};
     jaVotaram = [];
-    
     io.emit('mensagem', { texto: "🗳️ VOTAÇÃO INICIADA!", cor: "#00b0ff" });
     let candidatos = empatados ? empatados : Object.values(jogadores).filter(j => j.vivo);
-    
     if(candidatos.length === 0) { faseExplosao(null); return; }
-
     io.emit('abrirVotacao', candidatos);
 
     Object.values(jogadores).filter(j => j.ehBot).forEach(bot => {
@@ -161,159 +154,281 @@ function registrarVoto(idEleitor, idAlvo) {
     if(!votosComputados[idAlvo]) votosComputados[idAlvo] = 0;
     votosComputados[idAlvo]++;
     jaVotaram.push(idEleitor);
-
     let totalJogadores = Object.keys(jogadores).length;
     io.emit('progressoVotacao', { atual: jaVotaram.length, total: totalJogadores });
-
-    if(jaVotaram.length >= totalJogadores) {
-        setTimeout(finalizarVotacao, 1000);
-    }
+    if(jaVotaram.length >= totalJogadores) setTimeout(finalizarVotacao, 1000);
 }
 
 function finalizarVotacao() {
     io.emit('fecharVotacao');
     let rankingVotos = Object.keys(votosComputados).sort((a,b) => votosComputados[b] - votosComputados[a]);
-    
     if(rankingVotos.length === 0) {
-        io.emit('mensagem', { texto: "NINGUÉM VOTOU...", cor: "yellow" });
+        io.emit('mensagem', { texto: "SEM VOTOS...", cor: "yellow" });
         iniciarNovaRodada(Object.values(jogadores).filter(j=>j.vivo));
         return;
     }
-
     let id1 = rankingVotos[0];
     let id2 = rankingVotos[1];
 
     if(id2) {
-        // VAMOS PARA AS APOSTAS ANTES DO TABULEIRO
+        // Empate ou Top 2 -> Vai para Apostas depois Minigame
         iniciarFaseApostas(jogadores[id1], jogadores[id2]);
     } else {
         faseExplosao(jogadores[id1]);
     }
 }
 
-// 3. FASE DE APOSTAS (NOVO)
+// 3. APOSTAS
 function iniciarFaseApostas(p1, p2) {
     if(!p1 || !p2) { faseExplosao(null); return; }
-    
     apostas = {};
-    io.emit('mensagem', { texto: `💸 FAÇAM SUAS APOSTAS! QUEM VENCE?`, cor: "#00e676" });
+    io.emit('mensagem', { texto: `💸 APOSTAS: QUEM VENCE O DUELO?`, cor: "#00e676" });
     io.emit('abrirApostasUI', { p1: p1, p2: p2 });
 
-    // Bots fazem apostas
     Object.values(jogadores).filter(j => j.ehBot && j.id !== p1.id && j.id !== p2.id && j.vivo).forEach(bot => {
-        setTimeout(() => {
-            // Bot aposta aleatorio
-            let apostaBot = (Math.random() > 0.5) ? p1.id : p2.id;
-            apostas[bot.id] = apostaBot;
-        }, 2000);
+        setTimeout(() => { apostas[bot.id] = (Math.random() > 0.5) ? p1.id : p2.id; }, 2000);
     });
 
-    // Tempo para apostar: 8 segundos
     setTimeout(() => {
         io.emit('fecharApostasUI');
-        iniciarBoardGame(p1, p2);
+        sortearMinigame(p1, p2); // VAI PRO SORTEIO
     }, 8000);
 }
 
-// 4. JOGO DO TABULEIRO
-function iniciarBoardGame(p1, p2) {
-    boardAtivo = true;
-    boardPlayers = [p1, p2];
-    boardPositions = {};
-    boardPositions[p1.id] = 0;
-    boardPositions[p2.id] = 0;
-    boardTurn = 0; 
-
-    io.emit('mensagem', { texto: `🎲 CORRIDA: ${p1.nome} VS ${p2.nome}`, cor: "#ff9100" });
-    io.emit('iniciarBoardUI', { p1: p1, p2: p2, tamanho: BOARD_SIZE });
-
-    processarTurnoBoard();
+// 4. SORTEIO E INÍCIO DOS MINIGAMES
+function sortearMinigame(p1, p2) {
+    minigameAtivo = true;
+    duelistas = [p1, p2];
+    
+    // Lista de jogos disponíveis
+    const jogos = ['BOARD', 'MEMORY', 'REFLEX', 'CLICKER', 'MATH'];
+    tipoMinigame = jogos[Math.floor(Math.random() * jogos.length)];
+    
+    io.emit('mensagem', { texto: `🎰 SORTEANDO MINIGAME...`, cor: "#ff00ff" });
+    
+    // Simula roleta visual no cliente
+    setTimeout(() => {
+        switch(tipoMinigame) {
+            case 'BOARD': iniciarBoardGame(); break;
+            case 'MEMORY': iniciarMemoryGame(); break;
+            case 'REFLEX': iniciarReflexGame(); break;
+            case 'CLICKER': iniciarClickerGame(); break;
+            case 'MATH': iniciarMathGame(); break;
+        }
+    }, 2000);
 }
 
-function processarTurnoBoard() {
-    if(!boardAtivo) return;
-    let atual = boardPlayers[boardTurn];
-    io.emit('vezBoard', { id: atual.id, nome: atual.nome });
+// --- LOGICA DOS 5 JOGOS ---
 
-    if(atual.ehBot && atual.vivo) {
-        setTimeout(() => rolarDado(atual.id), 1500);
-    }
+// JOGO 1: TABULEIRO (Sorte)
+function iniciarBoardGame() {
+    mgState = { pos: {}, turn: 0 };
+    mgState.pos[duelistas[0].id] = 0;
+    mgState.pos[duelistas[1].id] = 0;
+    
+    io.emit('iniciarMinigameUI', { type: 'BOARD', p1: duelistas[0], p2: duelistas[1] });
+    setTimeout(turnoBoard, 1000);
 }
-
-function rolarDado(idSolicitante) {
-    if(!boardAtivo) return;
-    let atual = boardPlayers[boardTurn];
-    if(atual.id !== idSolicitante) return;
-
+function turnoBoard() {
+    if(!minigameAtivo) return;
+    let atual = duelistas[mgState.turn];
+    io.emit('boardVez', { id: atual.id });
+    if(atual.ehBot && atual.vivo) setTimeout(() => inputBoard(atual.id), 1000);
+}
+function inputBoard(id) {
+    if(!minigameAtivo || duelistas[mgState.turn].id !== id) return;
+    
     let dado = Math.floor(Math.random() * 6) + 1;
-    let novaPos = boardPositions[atual.id] + dado;
-    let msgExtra = "";
-    
-    if(novaPos === 13) { novaPos -= 3; msgExtra = " (AZAR!)"; }
-    if(novaPos === 7) { novaPos += 2; msgExtra = " (SORTE!)"; }
+    let novaPos = mgState.pos[id] + dado;
+    if(novaPos === 7) novaPos += 2; // Sorte
+    if(novaPos === 13) novaPos -= 3; // Azar
+    if(novaPos > 20) novaPos = 20;
+    mgState.pos[id] = novaPos;
 
-    if(novaPos > BOARD_SIZE) novaPos = BOARD_SIZE;
-    boardPositions[atual.id] = novaPos;
+    io.emit('boardDado', { id: id, val: dado, pos: novaPos });
 
-    io.emit('dadoRolado', { id: atual.id, dado: dado, pos: novaPos, msg: msgExtra });
-
-    if(novaPos >= BOARD_SIZE) {
-        // TEMOS UM VENCEDOR
-        boardAtivo = false;
-        let vencedor = atual;
-        let perdedor = boardPlayers.find(p => p.id !== atual.id);
-        
-        io.emit('mensagem', { texto: `🏁 ${vencedor.nome} VENCEU A CORRIDA!`, cor: "#00e676" });
-        
-        setTimeout(() => {
-            resolverResultadoFinal(vencedor, perdedor);
-        }, 2000);
-
-    } else {
-        boardTurn = (boardTurn === 0) ? 1 : 0;
-        setTimeout(processarTurnoBoard, 1000);
+    if(novaPos >= 20) encerrarMinigame(jogadores[id]); // Vencedor
+    else {
+        mgState.turn = (mgState.turn === 0) ? 1 : 0;
+        setTimeout(turnoBoard, 1000);
     }
 }
 
-// 5. RESOLUÇÃO DE MORTES (DUELO + APOSTAS)
-function resolverResultadoFinal(vencedor, perdedor) {
-    // 1. Mata o perdedor do duelo
-    perdedor.vivo = false;
-    perdedor.vidas = 0;
-    io.emit('efeitoKill', { idVitima: perdedor.id });
-    io.emit('mensagem', { texto: `💥 ${perdedor.nome} EXPLODIU NO PAREDÃO!`, cor: "red" });
-
-    // 2. Verifica as apostas
-    let listaApostadores = Object.values(jogadores).filter(j => j.vivo && j.id !== vencedor.id && j.id !== perdedor.id);
+// JOGO 2: MEMÓRIA (Memória)
+function iniciarMemoryGame() {
+    mgState = { seq: [], prog: {}, nivel: 3 };
+    duelistas.forEach(p => mgState.prog[p.id] = 0);
+    io.emit('iniciarMinigameUI', { type: 'MEMORY', p1: duelistas[0], p2: duelistas[1] });
+    setTimeout(novaRodadaMemory, 2000);
+}
+function novaRodadaMemory() {
+    if(!minigameAtivo) return;
+    mgState.seq = [];
+    for(let i=0; i<mgState.nivel; i++) mgState.seq.push(Math.floor(Math.random() * 4));
+    duelistas.forEach(p => mgState.prog[p.id] = 0);
     
-    listaApostadores.forEach(apostador => {
-        let voto = apostas[apostador.id];
-        
-        if(voto !== vencedor.id) {
-            // APOSTOU ERRADO (ou não apostou)
-            if(apostador.temEscudo) {
-                apostador.temEscudo = false;
-                io.emit('mensagem', { texto: `🛡️ ${apostador.nome} ERROU A APOSTA MAS SE SALVOU!`, cor: "#ffd700" });
-                io.emit('efeitoDefesa', { idVitima: apostador.id });
-            } else {
-                apostador.vivo = false;
-                apostador.vidas = 0;
-                io.emit('mensagem', { texto: `💸 ${apostador.nome} PERDEU A APOSTA E MORREU!`, cor: "red" });
-                io.emit('efeitoKill', { idVitima: apostador.id });
+    io.emit('memoryShow', mgState.seq);
+    
+    // Bots
+    duelistas.forEach(p => {
+        if(p.ehBot) {
+            let delay = 2000 + (mgState.nivel * 500);
+            mgState.seq.forEach((cor, idx) => {
+                setTimeout(() => {
+                    let input = (Math.random() > 0.1) ? cor : Math.floor(Math.random()*4); // 10% erro
+                    inputMemory(p.id, input);
+                }, delay + (idx * 800));
+            });
+        }
+    });
+}
+function inputMemory(id, cor) {
+    if(!minigameAtivo) return;
+    let idx = mgState.prog[id];
+    if(cor === mgState.seq[idx]) {
+        mgState.prog[id]++;
+        if(mgState.prog[id] >= mgState.seq.length) {
+            // Completou rodada
+            let outro = duelistas.find(p => p.id !== id);
+            if(mgState.prog[outro.id] >= mgState.seq.length) {
+                mgState.nivel++;
+                io.emit('mensagem', {texto: "NÍVEL SUBIU!", cor: "cyan"});
+                setTimeout(novaRodadaMemory, 1500);
             }
-        } else {
-            // APOSTOU CERTO
-            // Poderia ganhar vida extra aqui se quisesse, mas sobreviver já é lucro
+        }
+    } else {
+        // Errou = Perdeu
+        let perdedor = jogadores[id];
+        let vencedor = duelistas.find(p => p.id !== id);
+        encerrarMinigame(vencedor);
+    }
+}
+
+// JOGO 3: REFLEXO (Velocidade)
+function iniciarReflexGame() {
+    io.emit('iniciarMinigameUI', { type: 'REFLEX', p1: duelistas[0], p2: duelistas[1] });
+    mgState = { verde: false };
+    
+    let tempo = Math.random() * 3000 + 2000;
+    setTimeout(() => {
+        if(!minigameAtivo) return;
+        mgState.verde = true;
+        io.emit('reflexGo');
+        
+        duelistas.forEach(p => {
+            if(p.ehBot) setTimeout(() => inputReflex(p.id), Math.random() * 400 + 200);
+        });
+    }, tempo);
+}
+function inputReflex(id) {
+    if(!minigameAtivo) return;
+    if(!mgState.verde) {
+        // Queimou largada
+        let perdedor = jogadores[id];
+        let vencedor = duelistas.find(p => p.id !== id);
+        encerrarMinigame(vencedor);
+    } else {
+        // Venceu
+        encerrarMinigame(jogadores[id]);
+    }
+}
+
+// JOGO 4: CLICKER (Esmaga Botão)
+function iniciarClickerGame() {
+    mgState = { clicks: {}, meta: 20 };
+    duelistas.forEach(p => mgState.clicks[p.id] = 0);
+    io.emit('iniciarMinigameUI', { type: 'CLICKER', p1: duelistas[0], p2: duelistas[1], meta: 20 });
+    
+    // Bots clicam
+    duelistas.forEach(p => {
+        if(p.ehBot) {
+            let intv = setInterval(() => {
+                if(!minigameAtivo) clearInterval(intv);
+                inputClicker(p.id);
+            }, 150); // Clica rapido
+        }
+    });
+}
+function inputClicker(id) {
+    if(!minigameAtivo) return;
+    mgState.clicks[id]++;
+    io.emit('clickerUpdate', { id: id, val: mgState.clicks[id] });
+    if(mgState.clicks[id] >= mgState.meta) {
+        encerrarMinigame(jogadores[id]);
+    }
+}
+
+// JOGO 5: MATEMÁTICA (Raciocínio)
+function iniciarMathGame() {
+    let n1 = Math.floor(Math.random() * 20) + 1;
+    let n2 = Math.floor(Math.random() * 20) + 1;
+    mgState = { res: n1 + n2 };
+    
+    io.emit('iniciarMinigameUI', { type: 'MATH', p1: duelistas[0], p2: duelistas[1], q: `${n1} + ${n2}` });
+    
+    // Bots
+    duelistas.forEach(p => {
+        if(p.ehBot) {
+            setTimeout(() => {
+                // Bot as vezes erra ou acerta
+                let resp = (Math.random() > 0.2) ? mgState.res : mgState.res + 1;
+                inputMath(p.id, resp);
+            }, Math.random() * 2000 + 1000);
+        }
+    });
+}
+function inputMath(id, val) {
+    if(!minigameAtivo) return;
+    if(parseInt(val) === mgState.res) {
+        encerrarMinigame(jogadores[id]);
+    } else {
+        // Errou, perdeu
+        let perdedor = jogadores[id];
+        let vencedor = duelistas.find(p => p.id !== id);
+        encerrarMinigame(vencedor);
+    }
+}
+
+// 5. RESULTADO FINAL
+function encerrarMinigame(vencedor) {
+    if(!minigameAtivo) return;
+    minigameAtivo = false;
+    let perdedor = duelistas.find(p => p.id !== vencedor.id);
+    
+    io.emit('mensagem', { texto: `🏆 ${vencedor.nome} VENCEU O DUELO!`, cor: "#00e676" });
+    
+    setTimeout(() => {
+        resolverResultadoFinal(vencedor, perdedor);
+    }, 2000);
+}
+
+function resolverResultadoFinal(vencedor, perdedor) {
+    // Mata perdedor
+    perdedor.vivo = false; perdedor.vidas = 0;
+    io.emit('efeitoKill', { idVitima: perdedor.id });
+    io.emit('mensagem', { texto: `💥 ${perdedor.nome} FOI ELIMINADO!`, cor: "red" });
+
+    // Verifica apostas
+    let apostadores = Object.values(jogadores).filter(j => j.vivo && j.id !== vencedor.id && j.id !== perdedor.id);
+    apostadores.forEach(p => {
+        if(apostas[p.id] !== vencedor.id) {
+            if(p.temEscudo) {
+                p.temEscudo = false;
+                io.emit('mensagem', { texto: `🛡️ ${p.nome} ERROU APOSTA MAS TINHA ESCUDO!`, cor: "gold" });
+            } else {
+                p.vivo = false; p.vidas = 0;
+                io.emit('efeitoKill', { idVitima: p.id });
+                io.emit('mensagem', { texto: `💸 ${p.nome} ERROU APOSTA E MORREU!`, cor: "red" });
+            }
         }
     });
 
     io.emit('atualizarLista', Object.values(jogadores));
-    
-    // Verifica Fim de Jogo
+    io.emit('fimMinigameUI'); // Fecha janelas
+
     let vivos = Object.values(jogadores).filter(j => j.vivo);
     setTimeout(() => {
         if(vivos.length <= 1) {
-            jogoAndando = false;
             let campeao = vivos[0] ? vivos[0] : { nome: "NINGUÉM", tipo: "bot" };
             if(campeao.nome !== "NINGUÉM") {
                 hallDaFama.unshift({ nome: campeao.nome, data: new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) });
@@ -328,120 +443,72 @@ function resolverResultadoFinal(vencedor, perdedor) {
 }
 
 function faseExplosao(eliminado) {
-    // Usado apenas se for eliminação direta sem duelo (raro agora)
+    // Caso de eliminação direta (raro)
     if(eliminado) {
-        if(eliminado.temEscudo) {
-            eliminado.temEscudo = false;
-            io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} SOBREVIVEU COM ESCUDO!`, cor: "#ffd700" });
-        } else {
-            eliminado.vivo = false;
-            io.emit('mensagem', { texto: `💥 ${eliminado.nome} ELIMINADO!`, cor: "red" });
-        }
+        eliminado.vivo = false;
+        io.emit('mensagem', { texto: `💥 ${eliminado.nome} SAIU!`, cor: "red" });
     }
-    io.emit('atualizarLista', Object.values(jogadores));
-    
-    // Reinicia
     let vivos = Object.values(jogadores).filter(j => j.vivo);
-    setTimeout(() => {
-        if(vivos.length <= 1) {
-            let campeao = vivos[0] ? vivos[0] : { nome: "NINGUÉM", tipo: "bot" };
-            io.emit('fimDeJogo', { campeao: campeao });
-        } else {
-            iniciarNovaRodada(vivos);
-        }
-    }, 3000);
+    if(vivos.length<=1) io.emit('fimDeJogo', {campeao: vivos[0]});
+    else iniciarNovaRodada(vivos);
 }
 
 function iniciarNovaRodada(sobreviventes) {
     faseAtual++;
     sobreviventes.forEach(j => { j.sala = null; j.temEscudo = false; });
-    
     let vivos = Object.values(jogadores).filter(j => j.vivo);
     salasData = iniciarSalas(vivos.length);
     ordemTurno = vivos.sort(() => Math.random() - 0.5);
     turnoIndex = 0;
-
     io.emit('novaRodada', { fase: faseAtual, salas: salasData, jogadores: Object.values(jogadores) });
     setTimeout(processarProximoTurno, 1000);
 }
 
-// === CONEXÃO ===
+// === CONEXÃO PADRÃO ===
 io.on('connection', (socket) => {
     atualizarContadorOnline();
     socket.emit('atualizarRanking', hallDaFama);
-    socket.emit('configAtual', gameConfig);
-
     socket.on('adminLogin', (s) => socket.emit('adminLogado', s === 'admin'));
-    socket.on('adminSalvarConfig', (n) => {
-        if(n.maxJogadores) gameConfig.maxJogadores = parseInt(n.maxJogadores);
-        if(n.vidasIniciais) gameConfig.vidasIniciais = parseInt(n.vidasIniciais);
-        if(n.velocidadeBot) gameConfig.velocidadeBot = parseInt(n.velocidadeBot);
-        if(n.fatorPortas) gameConfig.fatorPortas = parseFloat(n.fatorPortas);
-        io.emit('mensagem', { texto: "⚙️ REGRAS ATUALIZADAS!", cor: "#00e676" });
-    });
+    socket.on('adminSalvarConfig', (n) => { /* Simplificado */ });
     socket.on('adminZerarRank', () => { hallDaFama = []; io.emit('atualizarRanking', hallDaFama); });
 
-    socket.on('entrar', (dados) => {
-        jogadores[socket.id] = {
-            id: socket.id, nome: dados.nome, tipo: dados.tipo,
-            vidas: gameConfig.vidasIniciais, temEscudo: false, sala: null, vivo: true, ehBot: false
-        };
+    socket.on('entrar', (d) => {
+        jogadores[socket.id] = { id: socket.id, nome: d.nome, tipo: d.tipo, vidas: 2, temEscudo: false, sala: null, vivo: true, ehBot: false };
         io.emit('atualizarLista', Object.values(jogadores));
     });
 
     socket.on('iniciarJogo', () => {
         if(jogoAndando) return;
-        let lista = Object.values(jogadores);
-        let qtdFaltante = gameConfig.maxJogadores - lista.length;
-        if(qtdFaltante < 0) qtdFaltante = 0;
-
-        for(let i=1; i<=qtdFaltante; i++) {
-            let idBot = `bot-${Date.now()}-${i}`;
-            jogadores[idBot] = {
-                id: idBot, nome: `Bot ${i}`, tipo: 'bot',
-                vidas: gameConfig.vidasIniciais, temEscudo: false, sala: null, vivo: true, ehBot: true
-            };
+        let qtd = 20 - Object.values(jogadores).length;
+        for(let i=1; i<=qtd; i++) {
+            let id = `bot-${Date.now()}-${i}`;
+            jogadores[id] = { id: id, nome: `Bot ${i}`, tipo: 'bot', vidas: 2, temEscudo: false, sala: null, vivo: true, ehBot: true };
         }
-        
         let vivos = Object.values(jogadores);
         salasData = iniciarSalas(vivos.length);
         ordemTurno = vivos.sort(() => Math.random() - 0.5);
         turnoIndex = 0;
-        jogoAndando = true;
-        faseAtual = 1;
+        jogoAndando = true; faseAtual = 1;
         io.emit('inicioDePartida', { salas: salasData, jogadores: vivos });
         setTimeout(processarProximoTurno, 1000);
     });
 
-    socket.on('jogarTurno', (idSala) => {
-        let jogadorDaVez = ordemTurno[turnoIndex];
-        if(jogadorDaVez && jogadorDaVez.id === socket.id) {
-            resolverEntrada(idSala, socket.id);
-        }
-    });
+    socket.on('jogarTurno', (id) => resolverEntrada(id, socket.id));
+    socket.on('enviarVoto', (id) => { if(jogadores[socket.id]) registrarVoto(socket.id, id); });
+    socket.on('fazerAposta', (id) => apostas[socket.id] = id);
 
-    socket.on('enviarVoto', (idAlvo) => {
-        if(jogadores[socket.id]) registrarVoto(socket.id, idAlvo);
-    });
-
-    // INPUT APOSTA
-    socket.on('fazerAposta', (idCandidato) => {
-        apostas[socket.id] = idCandidato;
-    });
-
-    // INPUT DO DADO
-    socket.on('pedirDado', () => {
-        if(boardAtivo) rolarDado(socket.id);
-    });
+    // INPUTS MINIGAMES
+    socket.on('pedirDado', () => { if(minigameAtivo && tipoMinigame==='BOARD') inputBoard(socket.id); });
+    socket.on('memoryInput', (c) => { if(minigameAtivo && tipoMinigame==='MEMORY') inputMemory(socket.id, c); });
+    socket.on('cliqueReflex', () => { if(minigameAtivo && tipoMinigame==='REFLEX') inputReflex(socket.id); });
+    socket.on('clickerHit', () => { if(minigameAtivo && tipoMinigame==='CLICKER') inputClicker(socket.id); });
+    socket.on('mathResp', (v) => { if(minigameAtivo && tipoMinigame==='MATH') inputMath(socket.id, v); });
 
     socket.on('disconnect', () => {
         if(jogadores[socket.id]) { jogadores[socket.id].vivo = false; delete jogadores[socket.id]; }
-        let humanos = Object.values(jogadores).filter(j => !j.ehBot);
-        if(humanos.length === 0) { jogoAndando = false; jogadores = {}; }
         io.emit('atualizarLista', Object.values(jogadores));
-        atualizarContadorOnline();
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR APOSTAS: ${PORT}`); });
+server.listen(PORT, () => { console.log(`SERVIDOR 5 MINIGAMES: ${PORT}`); });
