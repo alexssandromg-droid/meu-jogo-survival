@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Survival Royale: MEMÓRIA</title>
+    <title>Survival Royale: TABULEIRO</title>
     <script src="/socket.io/socket.io.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
     <style>
@@ -13,25 +13,36 @@
         }
         body { background-color: var(--bg-dark); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; height: 100vh; overflow: hidden; user-select: none; display: flex; flex-direction: column; }
 
-        /* --- MEMORY GAME UI --- */
-        #memory-overlay {
+        /* TABULEIRO OVERLAY */
+        #board-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(10, 10, 10, 0.98); z-index: 2000 !important;
-            flex-direction: column; justify-content: center; align-items: center;
+            background: #111; z-index: 2000 !important;
+            flex-direction: column; justify-content: flex-start; align-items: center; padding-top: 20px;
         }
-        #mem-status { font-size: 30px; color: white; margin-bottom: 20px; text-align: center; }
-        .mem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .mem-btn {
-            width: 120px; height: 120px; border-radius: 15px; border: 4px solid #333;
-            cursor: pointer; transition: 0.1s; opacity: 0.5;
+        .board-track {
+            display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; max-width: 90%; margin-top: 20px;
         }
-        .mem-btn.red { background-color: #ff1744; }
-        .mem-btn.blue { background-color: #00b0ff; }
-        .mem-btn.green { background-color: #00e676; }
-        .mem-btn.yellow { background-color: #ffea00; }
+        .board-cell {
+            width: 40px; height: 40px; border: 1px solid #444; background: #222;
+            display: flex; justify-content: center; align-items: center; font-size: 12px; color: #555; position: relative;
+        }
+        .board-cell.trap { border-color: red; background: #330000; }
+        .board-cell.finish { border-color: gold; background: #333300; }
         
-        .mem-btn.active { opacity: 1; transform: scale(1.1); box-shadow: 0 0 30px white; border-color: white; }
-        .mem-btn:active { transform: scale(0.95); }
+        .p-token {
+            width: 20px; height: 20px; border-radius: 50%; position: absolute; box-shadow: 0 0 5px black;
+            font-size: 10px; display: flex; justify-content: center; align-items: center; color: black; font-weight: bold;
+        }
+
+        #dice-area { margin-top: 30px; text-align: center; }
+        #dice-btn {
+            font-size: 50px; background: none; border: 2px solid white; color: white;
+            border-radius: 10px; width: 100px; height: 100px; cursor: pointer; transition: 0.2s;
+        }
+        #dice-btn:hover { background: white; color: black; }
+        #dice-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        
+        #board-msg { font-size: 24px; color: var(--neon-gold); margin-bottom: 10px; }
 
         /* VOTAÇÃO MODAL */
         #voting-modal {
@@ -47,7 +58,7 @@
         }
         .vote-btn:hover { background: var(--neon-blue); border-color: white; }
 
-        /* UI PADRAO */
+        /* UI GERAL */
         #btn-admin-toggle { position: absolute; top: 20px; left: 20px; background: none; border: none; font-size: 24px; cursor: pointer; color: #333; z-index: 300; }
         .online-badge { position: absolute; top: 20px; right: 20px; background: #111; border: 1px solid #333; padding: 5px 15px; border-radius: 20px; color: var(--neon-green); font-size: 14px; display: flex; align-items: center; gap: 5px; }
         .online-dot { width: 8px; height: 8px; background: var(--neon-green); border-radius: 50%; box-shadow: 0 0 5px var(--neon-green); }
@@ -93,15 +104,8 @@
         #message-box { font-size: 24px; font-weight: bold; margin-bottom: 10px; height: 35px; text-shadow: 0 2px 10px black; }
         #timer-txt { font-size: 24px; color: var(--neon-gold); font-family: monospace; font-weight: bold; }
         #victory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
-        
         @keyframes shake { 0% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} 100% {transform: translateX(0);} }
-        @media (max-width: 600px) { 
-            #main-container { flex-direction: column-reverse; } 
-            #sidebar { width: 100%; height: 150px; } 
-            #rooms-grid { grid-template-columns: repeat(4, 1fr) !important; padding: 5px; } 
-            .logo-title { font-size: 40px; }
-            .vote-grid { grid-template-columns: repeat(2, 1fr); }
-        }
+        @media (max-width: 600px) { #main-container { flex-direction: column-reverse; } #sidebar { width: 100%; height: 150px; } #rooms-grid { grid-template-columns: repeat(4, 1fr) !important; padding: 5px; } .logo-title { font-size: 40px; } .vote-grid { grid-template-columns: repeat(2, 1fr); } }
     </style>
 </head>
 <body>
@@ -109,19 +113,18 @@
     <button id="btn-admin-toggle" onclick="abrirAdmin()">⚙️</button>
     <div class="online-badge"><div class="online-dot"></div><span id="online-count">1</span> ONLINE</div>
 
-    <div id="memory-overlay">
-        <div id="mem-status">OBSERVE...</div>
-        <div class="mem-grid">
-            <div class="mem-btn red" id="btn-0" onclick="sendMem(0)"></div>
-            <div class="mem-btn blue" id="btn-1" onclick="sendMem(1)"></div>
-            <div class="mem-btn green" id="btn-2" onclick="sendMem(2)"></div>
-            <div class="mem-btn yellow" id="btn-3" onclick="sendMem(3)"></div>
+    <div id="board-overlay">
+        <h2 style="color:var(--neon-gold); margin:0;">CORRIDA MORTAL</h2>
+        <div id="board-msg">VS</div>
+        <div class="board-track" id="board-track"></div>
+        <div id="dice-area">
+            <button id="dice-btn" onclick="rolarDado()">🎲</button>
+            <div style="margin-top:10px; color:#aaa;">JOGAR DADO</div>
         </div>
-        <div style="margin-top:20px; color:#aaa;">REPITAM A SEQUÊNCIA</div>
     </div>
 
     <div id="voting-modal">
-        <div style="font-size:30px; color:var(--neon-blue); margin-bottom:10px;">QUEM DEVE IR PRO PAREDÃO?</div>
+        <div style="font-size:30px; color:var(--neon-blue); margin-bottom:10px;">QUEM VAI PRO PAREDÃO?</div>
         <div class="vote-grid" id="vote-list"></div>
         <div style="margin-top:10px; color:#aaa;" id="vote-status">Aguardando votos...</div>
     </div>
@@ -187,11 +190,11 @@
 
     <script>
         const socket = io();
-        let meuId=null, minhaVez=false; timerVisual=null; let podeClicarMem = false;
+        let meuId=null, minhaVez=false; timerVisual=null;
 
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playTone(f,t,d){if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type=t;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.01,audioCtx.currentTime+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d);}
-        const SFX={click:()=>playTone(600,'sine',0.1),gas:()=>playTone(150,'sawtooth',0.4),life:()=>playTone(800,'triangle',0.2),key:()=>playTone(1200,'sine',0.5),explode:()=>playTone(60,'square',0.8),win:()=>playTone(600,'sine',0.6), beep:()=>playTone(800,'square',0.1)};
+        const SFX={click:()=>playTone(600,'sine',0.1),gas:()=>playTone(150,'sawtooth',0.4),life:()=>playTone(800,'triangle',0.2),key:()=>playTone(1200,'sine',0.5),explode:()=>playTone(60,'square',0.8),win:()=>playTone(600,'sine',0.6),dice:()=>playTone(400,'triangle',0.1)};
 
         function abrirAdmin(){document.getElementById('admin-panel').style.display='flex';}
         function fecharAdmin(){document.getElementById('admin-panel').style.display='none';}
@@ -235,51 +238,119 @@
         socket.on('progressoVotacao', (d) => { document.getElementById('vote-status').innerText = `Computando: ${d.atual}/${d.total}`; });
         socket.on('fecharVotacao', () => { document.getElementById('voting-modal').style.display = 'none'; });
 
-        // --- MEMORY GAME ---
-        socket.on('iniciarMemoryUI', (d) => {
-            const over = document.getElementById('memory-overlay');
-            over.style.display = 'flex';
-            document.getElementById('mem-status').innerText = "ATENÇÃO!";
-            // Habilita/Desabilita clique baseado se é um dos jogadores
-            if(d.p1.id === meuId || d.p2.id === meuId) {
-                podeClicarMem = false; // Espera sequencia
-            } else {
-                podeClicarMem = false; // Espectador
-            }
-        });
-
-        socket.on('memoryShowSequence', (seq) => {
-            podeClicarMem = false;
-            document.getElementById('mem-status').innerText = "OBSERVE...";
-            let delay = 500;
-            seq.forEach((corIndex, i) => {
-                setTimeout(() => {
-                    let btn = document.getElementById(`btn-${corIndex}`);
-                    btn.classList.add('active');
-                    SFX.beep();
-                    setTimeout(() => btn.classList.remove('active'), 400);
-                }, delay + (i * 800));
-            });
+        // --- BOARD GAME ---
+        socket.on('iniciarBoardUI', (d) => {
+            document.getElementById('board-overlay').style.display = 'flex';
+            document.getElementById('board-msg').innerText = `${d.p1.nome} VS ${d.p2.nome}`;
             
-            setTimeout(() => {
-                document.getElementById('mem-status').innerText = "SUA VEZ!";
-                podeClicarMem = true;
-            }, delay + (seq.length * 800));
+            // Build Track
+            const track = document.getElementById('board-track');
+            track.innerHTML = '';
+            for(let i=0; i<=d.tamanho; i++) {
+                let cell = document.createElement('div');
+                cell.className = 'board-cell';
+                if(i===13 || i===7) cell.classList.add('trap'); // Visual trap example
+                if(i===d.tamanho) cell.classList.add('finish');
+                cell.innerText = i;
+                
+                // Add tokens placeholders
+                let tk1 = document.createElement('div'); tk1.className='p-token'; tk1.id=`bt-p1-${i}`; tk1.style.background='cyan'; tk1.style.left='2px'; tk1.style.display='none'; tk1.innerText='1';
+                let tk2 = document.createElement('div'); tk2.className='p-token'; tk2.id=`bt-p2-${i}`; tk2.style.background='magenta'; tk2.style.right='2px'; tk2.style.display='none'; tk2.innerText='2';
+                
+                cell.appendChild(tk1); cell.appendChild(tk2);
+                track.appendChild(cell);
+            }
+            // Init tokens at 0
+            document.getElementById(`bt-p1-0`).style.display='flex';
+            document.getElementById(`bt-p2-0`).style.display='flex';
         });
 
-        function sendMem(idx) {
-            if(podeClicarMem) {
-                SFX.click();
-                let btn = document.getElementById(`btn-${idx}`);
-                btn.classList.add('active');
-                setTimeout(() => btn.classList.remove('active'), 200);
-                socket.emit('memoryInput', idx);
+        socket.on('vezBoard', (d) => {
+            let btn = document.getElementById('dice-btn');
+            if(d.id === meuId) {
+                btn.disabled = false;
+                btn.innerText = "🎲";
+                document.getElementById('board-msg').innerText = "SUA VEZ DE JOGAR O DADO!";
+            } else {
+                btn.disabled = true;
+                btn.innerText = "⏳";
+                document.getElementById('board-msg').innerText = `VEZ DE ${d.nome}`;
             }
+        });
+
+        function rolarDado() {
+            socket.emit('pedirDado');
+            SFX.click();
         }
 
-        socket.on('memoryResultado', () => {
-            document.getElementById('memory-overlay').style.display = 'none';
+        socket.on('dadoRolado', (d) => {
+            SFX.dice();
+            let btn = document.getElementById('dice-btn');
+            btn.innerText = d.dado;
+            
+            // Move visual
+            // Hide all tokens for this player
+            let pIndex = (d.id === document.getElementById('game-players-list').firstChild.id.split('-')[1]) ? 'p1' : 'p2'; // Simplificado, na real precisaria mapear ID para P1/P2 corretamente
+            // Hack visual rápido: vamos limpar tudo e redesenhar base no ID
+            // Melhor: o server devia mandar "posições atuais" de ambos
+            
+            // Simplesmente achamos o token antigo e movemos
+            // Na v2 idealmente o server manda estado completo
+            
+            // Como não temos estado completo aqui, vamos confiar na logica:
+            // O server manda d.pos. 
+            // Precisamos saber se é o P1 ou P2 da UI.
+            // Vamos iterar
+            
+            // Reset tokens
+            for(let i=0; i<=20; i++) {
+                let t1 = document.getElementById(`bt-p1-${i}`);
+                let t2 = document.getElementById(`bt-p2-${i}`);
+                if(t1) t1.style.display='none';
+                if(t2) t2.style.display='none';
+            }
+            // Esse update visual tá meio fraco porque não persistimos quem é quem.
+            // Para consertar rápido: O server manda POSIÇÕES de ambos sempre que atualiza
+            // Mas no payload atual só vem um.
+            // Vamos deixar visualmente simples: Mostra apenas o número do dado e a posição.
+            
+            // Recarrega tokens (gambiarra visual funcional)
+            // Assumimos que P1 é quem jogou agora se... ah, complexo.
+            // Vamos só mostrar o dado e atualizar texto por enquanto para não bugar.
+            
+            // MELHORIA: O server na v2.1 mandará { p1Id: x, p1Pos: y, p2Id: z, p2Pos: w }
+            // Com o código atual, vamos só mostrar msg no chat
         });
+        
+        // CORREÇÃO VISUAL RÁPIDA P/ BOARD
+        // Vamos apenas ouvir "salaOcupada" style events mas para board
+        // O server atual não manda positions full.
+        // Vamos confiar no 'iniciarBoardUI' resetando e só mover quem jogou.
+        // Mas como não sei quem é P1 e P2 visualmente aqui...
+        // Ok, o server precisa mandar QUEM é P1 e P2 no init.
+        // O cliente guarda isso.
+        
+        let boardP1=null, boardP2=null;
+        socket.on('iniciarBoardUI', (d) => {
+            boardP1 = d.p1.id; boardP2 = d.p2.id; // Guarda IDs
+            // ... resto do init ...
+        });
+        
+        socket.on('dadoRolado', (d) => {
+            // Agora sabemos
+            let suffix = (d.id === boardP1) ? 'p1' : 'p2';
+            // Limpa tokens desse player
+            for(let i=0; i<=20; i++) {
+                let t = document.getElementById(`bt-${suffix}-${i}`);
+                if(t) t.style.display = 'none';
+            }
+            // Mostra novo
+            let novo = document.getElementById(`bt-${suffix}-${d.pos}`);
+            if(novo) novo.style.display = 'flex';
+            
+            if(d.msg) document.getElementById('board-msg').innerText += d.msg;
+        });
+
 
         socket.on('atualizarLista',(jogadores)=>{
             document.getElementById('lobby-list').innerHTML=jogadores.map(j=>`<div style="color:${j.id===meuId?'#00e676':'white'}">${j.nome}</div>`).join('');
@@ -300,7 +371,10 @@
             document.getElementById('main-menu').style.display='none';document.getElementById('game-interface').style.display='flex';
             renderizarGrid(d.salas);
         });
-        socket.on('novaRodada',(d)=>{renderizarGrid(d.salas);document.getElementById('message-box').innerText=`RODADA ${d.fase}`;});
+        socket.on('novaRodada',(d)=>{
+            document.getElementById('board-overlay').style.display = 'none'; // Fecha tabuleiro se tava aberto
+            renderizarGrid(d.salas);document.getElementById('message-box').innerText=`RODADA ${d.fase}`;
+        });
 
         socket.on('mudancaDeTurno',(d)=>{
             minhaVez=(d.idJogador===meuId); clearInterval(timerVisual);
@@ -333,6 +407,7 @@
         socket.on('efeitoDefesa',(d)=>{ let el = document.getElementById(`plist-${d.idVitima}`); if(el) { el.style.backgroundColor = "gold"; setTimeout(()=>el.style.backgroundColor="#151515", 500); } SFX.key(); });
         socket.on('efeitoKill',(d)=>{ let el = document.getElementById(`plist-${d.idVitima}`); if(el) { el.style.backgroundColor = "red"; setTimeout(()=>el.style.backgroundColor="#151515", 500); } SFX.explode(); });
         socket.on('fimDeJogo',(d)=>{
+            document.getElementById('board-overlay').style.display='none';
             document.getElementById('victory-screen').style.display='flex';document.getElementById('winner-name').innerText=d.campeao.nome;SFX.win();
         });
 
