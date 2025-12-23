@@ -26,16 +26,17 @@ let timerTurno = null;
 let faseAtual = 1;
 let hallDaFama = [];
 
-// Votação
+// Variáveis Votação e Apostas
 let votosComputados = {}; 
 let jaVotaram = [];
+let apostas = {}; // { idApostador: idCandidatoEscolhido }
 
-// === VARIÁVEIS DO TABULEIRO ===
+// Variáveis Tabuleiro
 let boardAtivo = false;
-let boardPlayers = []; // [p1, p2]
-let boardPositions = {}; // { id: 0 }
-let boardTurn = 0; // 0 ou 1 (índice do array boardPlayers)
-const BOARD_SIZE = 20; // Tamanho da pista
+let boardPlayers = []; 
+let boardPositions = {};
+let boardTurn = 0; 
+const BOARD_SIZE = 20;
 
 // === AUXILIARES ===
 function iniciarSalas(qtdJogadores) {
@@ -183,27 +184,47 @@ function finalizarVotacao() {
     let id2 = rankingVotos[1];
 
     if(id2) {
-        // Empate ou Top 2 -> Vão para o Tabuleiro
-        iniciarBoardGame(jogadores[id1], jogadores[id2]);
+        // VAMOS PARA AS APOSTAS ANTES DO TABULEIRO
+        iniciarFaseApostas(jogadores[id1], jogadores[id2]);
     } else {
-        // Só um foi votado, mas vamos dar chance dele se salvar no tabuleiro? 
-        // Não, a lógica do Paredão é duelo. Se foi unanime, explode.
         faseExplosao(jogadores[id1]);
     }
 }
 
-// 3. JOGO DO TABULEIRO (BOARD GAME)
-function iniciarBoardGame(p1, p2) {
+// 3. FASE DE APOSTAS (NOVO)
+function iniciarFaseApostas(p1, p2) {
     if(!p1 || !p2) { faseExplosao(null); return; }
+    
+    apostas = {};
+    io.emit('mensagem', { texto: `💸 FAÇAM SUAS APOSTAS! QUEM VENCE?`, cor: "#00e676" });
+    io.emit('abrirApostasUI', { p1: p1, p2: p2 });
 
+    // Bots fazem apostas
+    Object.values(jogadores).filter(j => j.ehBot && j.id !== p1.id && j.id !== p2.id && j.vivo).forEach(bot => {
+        setTimeout(() => {
+            // Bot aposta aleatorio
+            let apostaBot = (Math.random() > 0.5) ? p1.id : p2.id;
+            apostas[bot.id] = apostaBot;
+        }, 2000);
+    });
+
+    // Tempo para apostar: 8 segundos
+    setTimeout(() => {
+        io.emit('fecharApostasUI');
+        iniciarBoardGame(p1, p2);
+    }, 8000);
+}
+
+// 4. JOGO DO TABULEIRO
+function iniciarBoardGame(p1, p2) {
     boardAtivo = true;
     boardPlayers = [p1, p2];
     boardPositions = {};
     boardPositions[p1.id] = 0;
     boardPositions[p2.id] = 0;
-    boardTurn = 0; // Começa player 1
+    boardTurn = 0; 
 
-    io.emit('mensagem', { texto: `🎲 TABULEIRO: ${p1.nome} VS ${p2.nome}`, cor: "#ff9100" });
+    io.emit('mensagem', { texto: `🎲 CORRIDA: ${p1.nome} VS ${p2.nome}`, cor: "#ff9100" });
     io.emit('iniciarBoardUI', { p1: p1, p2: p2, tamanho: BOARD_SIZE });
 
     processarTurnoBoard();
@@ -211,12 +232,9 @@ function iniciarBoardGame(p1, p2) {
 
 function processarTurnoBoard() {
     if(!boardAtivo) return;
-
     let atual = boardPlayers[boardTurn];
-    
     io.emit('vezBoard', { id: atual.id, nome: atual.nome });
 
-    // Se for bot, joga sozinho
     if(atual.ehBot && atual.vivo) {
         setTimeout(() => rolarDado(atual.id), 1500);
     }
@@ -225,71 +243,73 @@ function processarTurnoBoard() {
 function rolarDado(idSolicitante) {
     if(!boardAtivo) return;
     let atual = boardPlayers[boardTurn];
-
-    // Verifica se é a vez de quem pediu
     if(atual.id !== idSolicitante) return;
 
-    // Rola 1 a 6
     let dado = Math.floor(Math.random() * 6) + 1;
     let novaPos = boardPositions[atual.id] + dado;
-    
-    // Efeitos de Casas Especiais (Armadilhas)
     let msgExtra = "";
-    // Exemplo: Casa 13 dá azar (volta 3)
-    if(novaPos === 13) {
-        novaPos -= 3;
-        msgExtra = " (AZAR! VOLTOU 3)";
-    }
-    // Exemplo: Casa 7 dá sorte (avança 2)
-    if(novaPos === 7) {
-        novaPos += 2;
-        msgExtra = " (SORTE! AVANÇOU 2)";
-    }
+    
+    if(novaPos === 13) { novaPos -= 3; msgExtra = " (AZAR!)"; }
+    if(novaPos === 7) { novaPos += 2; msgExtra = " (SORTE!)"; }
 
     if(novaPos > BOARD_SIZE) novaPos = BOARD_SIZE;
     boardPositions[atual.id] = novaPos;
 
-    io.emit('dadoRolado', { 
-        id: atual.id, 
-        dado: dado, 
-        pos: novaPos, 
-        msg: msgExtra 
-    });
+    io.emit('dadoRolado', { id: atual.id, dado: dado, pos: novaPos, msg: msgExtra });
 
-    // Verifica Vitória
     if(novaPos >= BOARD_SIZE) {
+        // TEMOS UM VENCEDOR
         boardAtivo = false;
+        let vencedor = atual;
         let perdedor = boardPlayers.find(p => p.id !== atual.id);
         
-        io.emit('mensagem', { texto: `🏁 ${atual.nome} VENCEU A CORRIDA!`, cor: "#00e676" });
-        setTimeout(() => faseExplosao(perdedor), 2000);
+        io.emit('mensagem', { texto: `🏁 ${vencedor.nome} VENCEU A CORRIDA!`, cor: "#00e676" });
+        
+        setTimeout(() => {
+            resolverResultadoFinal(vencedor, perdedor);
+        }, 2000);
+
     } else {
-        // Passa a vez
         boardTurn = (boardTurn === 0) ? 1 : 0;
         setTimeout(processarTurnoBoard, 1000);
     }
 }
 
-// 4. ELIMINAÇÃO FINAL
-function faseExplosao(eliminado) {
-    boardAtivo = false;
+// 5. RESOLUÇÃO DE MORTES (DUELO + APOSTAS)
+function resolverResultadoFinal(vencedor, perdedor) {
+    // 1. Mata o perdedor do duelo
+    perdedor.vivo = false;
+    perdedor.vidas = 0;
+    io.emit('efeitoKill', { idVitima: perdedor.id });
+    io.emit('mensagem', { texto: `💥 ${perdedor.nome} EXPLODIU NO PAREDÃO!`, cor: "red" });
 
-    if(eliminado) {
-        if(eliminado.temEscudo) {
-            eliminado.temEscudo = false;
-            io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} TINHA ESCUDO E SOBREVIVEU!`, cor: "#ffd700" });
-            io.emit('efeitoDefesa', { idVitima: eliminado.id });
+    // 2. Verifica as apostas
+    let listaApostadores = Object.values(jogadores).filter(j => j.vivo && j.id !== vencedor.id && j.id !== perdedor.id);
+    
+    listaApostadores.forEach(apostador => {
+        let voto = apostas[apostador.id];
+        
+        if(voto !== vencedor.id) {
+            // APOSTOU ERRADO (ou não apostou)
+            if(apostador.temEscudo) {
+                apostador.temEscudo = false;
+                io.emit('mensagem', { texto: `🛡️ ${apostador.nome} ERROU A APOSTA MAS SE SALVOU!`, cor: "#ffd700" });
+                io.emit('efeitoDefesa', { idVitima: apostador.id });
+            } else {
+                apostador.vivo = false;
+                apostador.vidas = 0;
+                io.emit('mensagem', { texto: `💸 ${apostador.nome} PERDEU A APOSTA E MORREU!`, cor: "red" });
+                io.emit('efeitoKill', { idVitima: apostador.id });
+            }
         } else {
-            eliminado.vivo = false;
-            eliminado.vidas = 0;
-            io.emit('mensagem', { texto: `💥 ${eliminado.nome} FOI ELIMINADO!`, cor: "red" });
-            io.emit('efeitoKill', { idVitima: eliminado.id });
-            if(eliminado.sala) io.emit('efeitoExplosao', { idSala: eliminado.sala, nome: eliminado.nome });
+            // APOSTOU CERTO
+            // Poderia ganhar vida extra aqui se quisesse, mas sobreviver já é lucro
         }
-    }
+    });
 
     io.emit('atualizarLista', Object.values(jogadores));
-
+    
+    // Verifica Fim de Jogo
     let vivos = Object.values(jogadores).filter(j => j.vivo);
     setTimeout(() => {
         if(vivos.length <= 1) {
@@ -305,6 +325,31 @@ function faseExplosao(eliminado) {
             iniciarNovaRodada(vivos);
         }
     }, 4000);
+}
+
+function faseExplosao(eliminado) {
+    // Usado apenas se for eliminação direta sem duelo (raro agora)
+    if(eliminado) {
+        if(eliminado.temEscudo) {
+            eliminado.temEscudo = false;
+            io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} SOBREVIVEU COM ESCUDO!`, cor: "#ffd700" });
+        } else {
+            eliminado.vivo = false;
+            io.emit('mensagem', { texto: `💥 ${eliminado.nome} ELIMINADO!`, cor: "red" });
+        }
+    }
+    io.emit('atualizarLista', Object.values(jogadores));
+    
+    // Reinicia
+    let vivos = Object.values(jogadores).filter(j => j.vivo);
+    setTimeout(() => {
+        if(vivos.length <= 1) {
+            let campeao = vivos[0] ? vivos[0] : { nome: "NINGUÉM", tipo: "bot" };
+            io.emit('fimDeJogo', { campeao: campeao });
+        } else {
+            iniciarNovaRodada(vivos);
+        }
+    }, 3000);
 }
 
 function iniciarNovaRodada(sobreviventes) {
@@ -379,6 +424,11 @@ io.on('connection', (socket) => {
         if(jogadores[socket.id]) registrarVoto(socket.id, idAlvo);
     });
 
+    // INPUT APOSTA
+    socket.on('fazerAposta', (idCandidato) => {
+        apostas[socket.id] = idCandidato;
+    });
+
     // INPUT DO DADO
     socket.on('pedirDado', () => {
         if(boardAtivo) rolarDado(socket.id);
@@ -394,4 +444,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR TABULEIRO: ${PORT}`); });
+server.listen(PORT, () => { console.log(`SERVIDOR APOSTAS: ${PORT}`); });
