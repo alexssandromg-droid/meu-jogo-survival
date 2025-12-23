@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Survival Royale: VOTAÇÃO</title>
+    <title>Survival Royale: DUELO</title>
     <script src="/socket.io/socket.io.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
     <style>
@@ -13,38 +13,48 @@
         }
         body { background-color: var(--bg-dark); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; height: 100vh; overflow: hidden; user-select: none; display: flex; flex-direction: column; }
 
+        /* DUELO OVERLAY */
+        #duel-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #220000; z-index: 2000 !important;
+            flex-direction: column; justify-content: center; align-items: center;
+            transition: background 0.1s;
+        }
+        #duel-status { font-size: 60px; font-weight: bold; color: white; margin-bottom: 30px; text-align:center; }
+        #duel-btn {
+            width: 200px; height: 200px; border-radius: 50%; border: 5px solid white;
+            background: rgba(255,255,255,0.1); color: white; font-size: 24px; cursor: pointer;
+            box-shadow: 0 0 30px rgba(255,255,255,0.2); font-weight: bold; display: none; /* Só mostra pros lutadores */
+        }
+        #duel-btn:active { transform: scale(0.95); background: white; color: black; }
+        
+        .duel-vs { font-size: 24px; color: var(--neon-gold); margin-bottom: 20px; }
+
         /* VOTAÇÃO MODAL */
         #voting-modal {
-            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(20, 0, 0, 0.95); z-index: 500;
+            display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(10, 10, 10, 0.98); z-index: 999;
             flex-direction: column; justify-content: center; align-items: center;
         }
-        .vote-title { font-size: 40px; color: var(--neon-red); margin-bottom: 20px; animation: pulse 1s infinite; }
-        .vote-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; max-width: 600px; width: 90%; }
+        .vote-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 800px; width: 95%; max-height: 60vh; overflow-y: auto; padding: 10px; }
         .vote-btn {
-            background: #222; border: 2px solid #555; color: white; padding: 20px;
-            font-size: 18px; border-radius: 8px; cursor: pointer; transition: 0.2s;
-            font-family: 'Rajdhani', sans-serif; text-transform: uppercase;
+            background: #222; border: 2px solid #555; color: white; padding: 15px;
+            font-size: 16px; border-radius: 8px; cursor: pointer; transition: 0.2s;
+            font-family: 'Rajdhani', sans-serif; text-transform: uppercase; width: 100%;
         }
-        .vote-btn:hover { background: var(--neon-red); border-color: white; transform: scale(1.05); }
-        .vote-status { margin-top: 20px; color: #aaa; font-size: 18px; }
+        .vote-btn:hover { background: var(--neon-blue); border-color: white; }
 
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-
-        /* RESTO DA UI (SIMPLIFICADO) */
+        /* UI PADRAO */
         #btn-admin-toggle { position: absolute; top: 20px; left: 20px; background: none; border: none; font-size: 24px; cursor: pointer; color: #333; z-index: 300; }
         .online-badge { position: absolute; top: 20px; right: 20px; background: #111; border: 1px solid #333; padding: 5px 15px; border-radius: 20px; color: var(--neon-green); font-size: 14px; display: flex; align-items: center; gap: 5px; }
         .online-dot { width: 8px; height: 8px; background: var(--neon-green); border-radius: 50%; box-shadow: 0 0 5px var(--neon-green); }
 
-        /* ADMIN */
         #admin-panel { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 400; flex-direction: column; justify-content: center; align-items: center; }
         .admin-card { background: #1a1a1a; padding: 20px; border: 1px solid var(--neon-blue); border-radius: 10px; width: 300px; text-align: left; }
         .admin-row { margin-bottom: 10px; }
-        .admin-row label { display: block; color: #aaa; font-size: 14px; }
         .admin-row input, .admin-row select { width: 100%; padding: 5px; background: #000; border: 1px solid #444; color: white; box-sizing: border-box; }
         .btn-admin { padding: 10px; width: 100%; cursor: pointer; font-weight: bold; margin-top:5px; border:none; }
 
-        /* MENU */
         #main-menu { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 200; transition: opacity 0.5s; }
         .logo-title { font-size: 60px; background: linear-gradient(to right, var(--neon-green), var(--neon-blue)); -webkit-background-clip: text; color: transparent; margin-bottom: 10px; text-align: center; }
         .menu-card { background: rgba(20, 20, 20, 0.9); padding: 30px; border-radius: 15px; border: 1px solid #333; width: 90%; max-width: 400px; text-align: center; }
@@ -53,7 +63,6 @@
         .hall-fama-container { margin-top: 20px; border-top: 1px solid #333; padding-top: 10px; }
         .rank-item { display: flex; justify-content: space-between; border-bottom: 1px dashed #333; padding: 5px; color: var(--neon-gold); }
 
-        /* JOGO */
         #game-interface { display: none; width: 100%; height: 100%; flex-direction: column; }
         #header { height: 60px; background: #111; border-bottom: 2px solid #333; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
         #main-container { display: flex; flex: 1; overflow: hidden; }
@@ -81,6 +90,7 @@
         #message-box { font-size: 24px; font-weight: bold; margin-bottom: 10px; height: 35px; text-shadow: 0 2px 10px black; }
         #timer-txt { font-size: 24px; color: var(--neon-gold); font-family: monospace; font-weight: bold; }
         #victory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
+        
         @keyframes shake { 0% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} 100% {transform: translateX(0);} }
         @media (max-width: 600px) { #main-container { flex-direction: column-reverse; } #sidebar { width: 100%; height: 150px; } #rooms-grid { grid-template-columns: repeat(4, 1fr) !important; padding: 5px; } .logo-title { font-size: 40px; } .vote-grid { grid-template-columns: repeat(2, 1fr); } }
     </style>
@@ -90,11 +100,17 @@
     <button id="btn-admin-toggle" onclick="abrirAdmin()">⚙️</button>
     <div class="online-badge"><div class="online-dot"></div><span id="online-count">1</span> ONLINE</div>
 
+    <div id="duel-overlay">
+        <div id="duel-status">PREPARAR...</div>
+        <div class="duel-vs" id="duel-vs-txt"></div>
+        <button id="duel-btn" onmousedown="atirarDuelo()">FIRE</button>
+        <div style="margin-top:20px; color:#aaa;">(Quem clicar primeiro no VERDE vence)</div>
+    </div>
+
     <div id="voting-modal">
-        <div class="vote-title">VOTE PARA ELIMINAR</div>
-        <div class="vote-grid" id="vote-list">
-            </div>
-        <div class="vote-status" id="vote-status">Aguardando votos...</div>
+        <div style="font-size:30px; color:var(--neon-blue); margin-bottom:10px;">QUEM DEVE IR PRO PAREDÃO?</div>
+        <div class="vote-grid" id="vote-list"></div>
+        <div style="margin-top:10px; color:#aaa;" id="vote-status">Aguardando votos...</div>
     </div>
 
     <div id="admin-panel">
@@ -184,37 +200,58 @@
         }
         function iniciarJogo(){socket.emit('iniciarJogo');}
 
-        // --- SISTEMA DE VOTAÇÃO ---
+        // --- VOTAÇÃO ---
         socket.on('abrirVotacao', (candidatos) => {
             const modal = document.getElementById('voting-modal');
             const lista = document.getElementById('vote-list');
-            const status = document.getElementById('vote-status');
-            
             modal.style.display = 'flex';
-            status.innerText = "Escolha alguém para eliminar!";
             lista.innerHTML = '';
-
-            candidatos.forEach(cand => {
-                let btn = document.createElement('button');
-                btn.className = 'vote-btn';
-                btn.innerHTML = `${cand.nome} ${cand.id === meuId ? '(VOCÊ)' : ''}`;
-                btn.onclick = () => {
-                    socket.emit('enviarVoto', cand.id);
-                    status.innerText = "Voto Confirmado. Aguardando outros...";
-                    // Desabilita botões
-                    document.querySelectorAll('.vote-btn').forEach(b => b.disabled = true);
+            candidatos.forEach(c => {
+                let b = document.createElement('button');
+                b.className = 'vote-btn';
+                b.innerHTML = `${c.nome} ${c.id===meuId?'(VOCÊ)':''}`;
+                b.onclick = () => {
+                    socket.emit('enviarVoto', c.id);
+                    document.getElementById('vote-status').innerText = "Voto enviado!";
+                    document.querySelectorAll('.vote-btn').forEach(bb=>bb.disabled=true);
                     SFX.click();
                 };
-                lista.appendChild(btn);
+                lista.appendChild(b);
             });
         });
+        socket.on('progressoVotacao', (d) => { document.getElementById('vote-status').innerText = `Computando: ${d.atual}/${d.total}`; });
+        socket.on('fecharVotacao', () => { document.getElementById('voting-modal').style.display = 'none'; });
 
-        socket.on('progressoVotacao', (dados) => {
-            document.getElementById('vote-status').innerText = `Votos computados: ${dados.atual}/${dados.total}`;
+        // --- DUELO ---
+        socket.on('iniciarDueloUI', (d) => {
+            const over = document.getElementById('duel-overlay');
+            over.style.display = 'flex';
+            over.style.background = '#220000'; // Reset para vermelho
+            document.getElementById('duel-status').innerText = "PREPARAR...";
+            document.getElementById('duel-vs-txt').innerText = `${d.p1.nome} VS ${d.p2.nome}`;
+            
+            // Só habilita o botão para quem está lutando
+            if(d.p1.id === meuId || d.p2.id === meuId) {
+                document.getElementById('duel-btn').style.display = 'block';
+            } else {
+                document.getElementById('duel-btn').style.display = 'none';
+            }
         });
 
-        socket.on('fecharVotacao', () => {
-            document.getElementById('voting-modal').style.display = 'none';
+        socket.on('sinalDuelo', (txt) => {
+            document.getElementById('duel-status').innerText = txt;
+            document.getElementById('duel-overlay').style.background = '#004400'; // Verde
+            SFX.start(); // Som de sinal
+        });
+
+        function atirarDuelo() {
+            socket.emit('cliqueDuelo');
+        }
+
+        socket.on('resultadoDuelo', (r) => {
+            let txt = r.vencedor ? `${r.vencedor.nome} VENCEU!` : "AMBOS FALHARAM";
+            document.getElementById('duel-status').innerText = txt + " (" + r.motivo + ")";
+            setTimeout(() => { document.getElementById('duel-overlay').style.display = 'none'; }, 2000);
         });
 
         socket.on('atualizarLista',(jogadores)=>{
@@ -225,7 +262,7 @@
                 let d=document.createElement('div');d.className=`player-item ${p.tipo}`;d.id=`plist-${p.id}`;
                 if(!p.vivo)d.classList.add('dead');
                 let st = p.vivo ? "❤️".repeat(p.vidas) : "👁️ MORTO";
-                if(p.temEscudo) st = "🛡️ PROTEGIDO";
+                if(p.temEscudo) st = "🛡️ ESCUDO";
                 d.innerHTML=`<div>${p.nome}</div><div style="font-size:10px">${st}</div>`;
                 gl.appendChild(d);
             });
