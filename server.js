@@ -9,15 +9,15 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 
-// === CONFIGURAÇÕES GLOBAIS ===
+// === CONFIGURAÇÕES ===
 let gameConfig = {
     maxJogadores: 20,
     vidasIniciais: 2,
     velocidadeBot: 500,
-    fatorPortas: 1.2
+    fatorPortas: 1.2,
+    chanceBotKill: 0.3 // 30% de chance do Bot Assassino matar na vez dele
 };
 
-// === DADOS DO JOGO ===
 let jogadores = {}; 
 let salasData = [];
 let jogoAndando = false;
@@ -26,21 +26,20 @@ let turnoIndex = 0;
 let timerTurno = null;
 let faseAtual = 1;
 let hallDaFama = [];
+let idAssassino = null; // Guarda quem é o traidor
 
-// === GERADOR DE SALAS COM NOVAS DINÂMICAS ===
+// === AUXILIARES ===
 function iniciarSalas(qtdJogadores) {
     let qtdPortas = Math.ceil(qtdJogadores * gameConfig.fatorPortas);
     if(qtdPortas < qtdJogadores) qtdPortas = qtdJogadores;
 
     let conteudos = ['chave']; 
-    
-    // Distribuição (Balanceada para o Caos)
-    let qtdGas = Math.floor(qtdPortas * 0.20);      // 20% Gás
-    let qtdVida = Math.floor(qtdPortas * 0.10);     // 10% Vida
-    let qtdVampiro = Math.floor(qtdPortas * 0.05);  // 5% Vampiro
-    let qtdTroca = Math.floor(qtdPortas * 0.05);    // 5% Troca
-    let qtdMina = Math.floor(qtdPortas * 0.05);     // 5% Mina
-    let qtdEspiao = Math.floor(qtdPortas * 0.05);   // 5% Espião
+    let qtdGas = Math.floor(qtdPortas * 0.20);
+    let qtdVida = Math.floor(qtdPortas * 0.10);
+    let qtdVampiro = Math.floor(qtdPortas * 0.05);
+    let qtdTroca = Math.floor(qtdPortas * 0.05);
+    let qtdMina = Math.floor(qtdPortas * 0.05);
+    let qtdEspiao = Math.floor(qtdPortas * 0.05);
 
     for(let i=0; i<qtdGas; i++) conteudos.push('gas');
     for(let i=0; i<qtdVida; i++) conteudos.push('vida');
@@ -67,7 +66,7 @@ function processarProximoTurno() {
     clearTimeout(timerTurno);
 
     if(turnoIndex >= ordemTurno.length) {
-        io.emit('mensagem', { texto: "⚠️ ASSASSINO CHEGANDO...", cor: "orange" });
+        io.emit('mensagem', { texto: "⚠️ FIM DA RODADA...", cor: "orange" });
         setTimeout(faseExplosao, 2000);
         return;
     }
@@ -87,14 +86,27 @@ function processarProximoTurno() {
         timerTurno = setTimeout(() => { jogadaDoBot(jogadorAtual); }, gameConfig.velocidadeBot);
     } else {
         timerTurno = setTimeout(() => {
-            io.emit('mensagem', { texto: `${jogadorAtual.nome} VACILOU!`, cor: "red" });
-            jogadaDoBot(jogadorAtual);
+            io.emit('mensagem', { texto: `${jogadorAtual.nome} DORMIU!`, cor: "red" });
+            jogadaDoBot(jogadorAtual); // Auto-play
         }, 10000);
     }
 }
 
 function jogadaDoBot(jogador) {
     if(!jogoAndando) return;
+
+    // LÓGICA DO BOT ASSASSINO
+    if(jogador.role === 'assassin' && Math.random() < gameConfig.chanceBotKill) {
+        // Tenta matar alguém
+        let vitimas = ordemTurno.filter(j => j.vivo && j.id !== jogador.id);
+        if(vitimas.length > 0) {
+            let alvo = vitimas[Math.floor(Math.random() * vitimas.length)];
+            executarAssassinato(jogador, alvo.id);
+            return;
+        }
+    }
+
+    // Jogada normal (escolher sala)
     let salasLivres = salasData.filter(s => !s.bloqueada);
     if(salasLivres.length > 0) {
         let escolha = salasLivres[Math.floor(Math.random() * salasLivres.length)];
@@ -102,6 +114,22 @@ function jogadaDoBot(jogador) {
     } else {
         turnoIndex++;
         processarProximoTurno();
+    }
+}
+
+// Função específica para o assassino matar
+function executarAssassinato(assassino, idVitima) {
+    let vitima = jogadores[idVitima];
+    if(vitima && vitima.vivo) {
+        vitima.vidas = 0;
+        vitima.vivo = false;
+        
+        io.emit('mensagem', { texto: `🔪 ${assassino.nome} ASSASSINOU ${vitima.nome}!`, cor: "#ff1744" });
+        io.emit('efeitoKill', { idVitima: vitima.id }); // Efeito visual no cliente
+        io.emit('atualizarLista', Object.values(jogadores));
+        
+        turnoIndex++;
+        setTimeout(processarProximoTurno, 1500);
     }
 }
 
@@ -117,66 +145,42 @@ function resolverEntrada(idSala, idJogador) {
         jogador.sala = idSala;
         let msgExtra = "";
 
-        // === EFEITOS ESPECIAIS ===
-        if(sala.tipo === 'gas') {
-            jogador.vidas -= 1;
-        }
-        else if(sala.tipo === 'vida') {
-            jogador.vidas += 1;
-        }
-        else if(sala.tipo === 'chave') {
-            jogador.temChave = true;
-        }
+        if(sala.tipo === 'gas') jogador.vidas -= 1;
+        else if(sala.tipo === 'vida') jogador.vidas += 1;
+        else if(sala.tipo === 'chave') jogador.temChave = true;
         else if(sala.tipo === 'vampiro') {
-            // Rouba 1 vida de alguém vivo
-            let vitimas = ordemTurno.filter(j => j.vivo && j.id !== jogador.id && j.vidas > 0);
+            let vitimas = ordemTurno.filter(j => j.vivo && j.id !== jogador.id);
             if(vitimas.length > 0) {
                 let alvo = vitimas[Math.floor(Math.random() * vitimas.length)];
-                alvo.vidas -= 1;
-                jogador.vidas += 1;
+                alvo.vidas -= 1; jogador.vidas += 1;
                 if(alvo.vidas <= 0) alvo.vivo = false;
-                msgExtra = ` (ROUBOU DE ${alvo.nome}!)`;
-            } else {
-                msgExtra = " (SEM VÍTIMAS!)";
+                msgExtra = ` (ROUBOU VIDA DE ${alvo.nome})`;
             }
         }
         else if(sala.tipo === 'troca') {
-            // Troca vidas
             let alvos = ordemTurno.filter(j => j.vivo && j.id !== jogador.id);
             if(alvos.length > 0) {
                 let alvo = alvos[Math.floor(Math.random() * alvos.length)];
-                let vidaMinha = jogador.vidas;
-                let vidaDele = alvo.vidas;
-                jogador.vidas = vidaDele;
-                alvo.vidas = vidaMinha;
-                msgExtra = ` (TROCOU COM ${alvo.nome}!)`;
+                let temp = jogador.vidas; jogador.vidas = alvo.vidas; alvo.vidas = temp;
+                msgExtra = ` (TROCOU COM ${alvo.nome})`;
             }
         }
         else if(sala.tipo === 'mina') {
-            // Transforma uma sala vazia em Gás
-            let salasVazias = salasData.filter(s => s.tipo === 'vazio' && !s.bloqueada);
-            if(salasVazias.length > 0) {
-                let alvoSala = salasVazias[Math.floor(Math.random() * salasVazias.length)];
-                alvoSala.tipo = 'gas'; // Agora é mortal!
-                msgExtra = " (UMA SALA VIROU GÁS!)";
-            } else {
-                msgExtra = " (FALHOU)";
+            let vazias = salasData.filter(s => s.tipo === 'vazio' && !s.bloqueada);
+            if(vazias.length > 0) {
+                vazias[Math.floor(Math.random() * vazias.length)].tipo = 'gas';
+                msgExtra = " (PLANTOU MINA)";
             }
         }
         else if(sala.tipo === 'espiao') {
-            // Revela onde tem perigo
             let perigos = salasData.filter(s => (s.tipo === 'gas' || s.tipo === 'mina') && !s.bloqueada);
             if(perigos.length > 0) {
-                let revelada = perigos[Math.floor(Math.random() * perigos.length)];
-                io.emit('mensagem', { texto: `🕵️ ESPIÃO: CUIDADO COM A SALA ${revelada.id}!`, cor: "#00b0ff" });
+                let rev = perigos[Math.floor(Math.random() * perigos.length)];
+                io.emit('mensagem', { texto: `🕵️ ESPIÃO: SALA ${rev.id} TEM PERIGO!`, cor: "#00b0ff" });
             }
         }
 
-        // Verifica Morte do Jogador Atual
-        if(jogador.vidas <= 0) {
-            jogador.vivo = false;
-            jogador.temChave = false;
-        }
+        if(jogador.vidas <= 0) { jogador.vivo = false; jogador.temChave = false; }
 
         io.emit('salaOcupada', { idSala: idSala, jogador: jogador, efeito: sala.tipo, msg: msgExtra });
         io.emit('atualizarLista', Object.values(jogadores));
@@ -188,35 +192,27 @@ function resolverEntrada(idSala, idJogador) {
 
 function faseExplosao() {
     if(!jogoAndando) return;
-    
-    // Mata 1 sem chave
     let alvos = ordemTurno.filter(j => j.vivo && j.sala && !j.temChave);
     
     if(alvos.length > 0) {
         let vitima = alvos[Math.floor(Math.random() * alvos.length)];
-        vitima.vivo = false;
-        vitima.vidas = 0;
+        vitima.vivo = false; vitima.vidas = 0;
         io.emit('efeitoExplosao', { idSala: vitima.sala, nome: vitima.nome });
-        io.emit('mensagem', { texto: `💥 ${vitima.nome} FOI PEGO PELO ASSASSINO!`, cor: "red" });
+        io.emit('mensagem', { texto: `💥 ${vitima.nome} FOI EXPLODIDO!`, cor: "red" });
     } else {
-        io.emit('mensagem', { texto: "ASSASSINO NÃO ACHOU NINGUÉM!", cor: "yellow" });
+        io.emit('mensagem', { texto: "SEM VÍTIMAS NA EXPLOSÃO!", cor: "yellow" });
     }
 
     io.emit('atualizarLista', Object.values(jogadores));
-    
     let vivos = Object.values(jogadores).filter(j => j.vivo);
     
     setTimeout(() => {
         if(vivos.length <= 1) {
             jogoAndando = false;
             let campeao = vivos[0] ? vivos[0] : { nome: "NINGUÉM", tipo: "bot" };
-            
             if(campeao.nome !== "NINGUÉM") {
-                hallDaFama.unshift({ 
-                    nome: campeao.nome, 
-                    data: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})
-                });
-                if(hallDaFama.length > 5) hallDaFama.pop();
+                hallDaFama.unshift({ nome: campeao.nome, data: new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) });
+                if(hallDaFama.length>5) hallDaFama.pop();
             }
             io.emit('fimDeJogo', { campeao: campeao });
             io.emit('atualizarRanking', hallDaFama);
@@ -228,13 +224,8 @@ function faseExplosao() {
 
 function iniciarNovaRodada(sobreviventes) {
     faseAtual++;
-    sobreviventes.forEach(j => { 
-        j.temChave = false; 
-        j.sala = null;
-    });
-    
-    jogadores = {};
-    sobreviventes.forEach(j => jogadores[j.id] = j);
+    sobreviventes.forEach(j => { j.temChave = false; j.sala = null; });
+    jogadores = {}; sobreviventes.forEach(j => jogadores[j.id] = j);
     
     let lista = Object.values(jogadores);
     salasData = iniciarSalas(lista.length);
@@ -252,21 +243,18 @@ io.on('connection', (socket) => {
     socket.emit('configAtual', gameConfig);
 
     socket.on('adminLogin', (s) => socket.emit('adminLogado', s === 'admin'));
-
-    socket.on('adminSalvarConfig', (nova) => {
-        if(nova.maxJogadores) gameConfig.maxJogadores = parseInt(nova.maxJogadores);
-        if(nova.vidasIniciais) gameConfig.vidasIniciais = parseInt(nova.vidasIniciais);
-        if(nova.velocidadeBot) gameConfig.velocidadeBot = parseInt(nova.velocidadeBot);
-        if(nova.fatorPortas) gameConfig.fatorPortas = parseFloat(nova.fatorPortas);
-        io.emit('mensagem', { texto: "⚙️ NOVAS REGRAS APLICADAS!", cor: "#00e676" });
+    socket.on('adminSalvarConfig', (n) => {
+        if(n.maxJogadores) gameConfig.maxJogadores = parseInt(n.maxJogadores);
+        if(n.vidasIniciais) gameConfig.vidasIniciais = parseInt(n.vidasIniciais);
+        if(n.velocidadeBot) gameConfig.velocidadeBot = parseInt(n.velocidadeBot);
+        io.emit('mensagem', { texto: "⚙️ REGRAS ATUALIZADAS!", cor: "#00e676" });
     });
-
     socket.on('adminZerarRank', () => { hallDaFama = []; io.emit('atualizarRanking', hallDaFama); });
 
     socket.on('entrar', (dados) => {
         jogadores[socket.id] = {
             id: socket.id, nome: dados.nome, tipo: dados.tipo,
-            vidas: gameConfig.vidasIniciais, temChave: false, sala: null, vivo: true, ehBot: false
+            vidas: gameConfig.vidasIniciais, temChave: false, sala: null, vivo: true, ehBot: false, role: 'crew'
         };
         io.emit('atualizarLista', Object.values(jogadores));
     });
@@ -281,10 +269,21 @@ io.on('connection', (socket) => {
             let idBot = `bot-${Date.now()}-${i}`;
             jogadores[idBot] = {
                 id: idBot, nome: `Bot ${i}`, tipo: 'bot',
-                vidas: gameConfig.vidasIniciais, temChave: false, sala: null, vivo: true, ehBot: true
+                vidas: gameConfig.vidasIniciais, temChave: false, sala: null, vivo: true, ehBot: true, role: 'crew'
             };
         }
+        
+        // SORTEAR ASSASSINO
         let listaCompleta = Object.values(jogadores);
+        let assassino = listaCompleta[Math.floor(Math.random() * listaCompleta.length)];
+        assassino.role = 'assassin';
+        idAssassino = assassino.id;
+
+        // Avisa apenas o assassino (se for humano)
+        if(!assassino.ehBot) {
+            io.to(assassino.id).emit('seuPapel', 'assassin');
+        }
+
         salasData = iniciarSalas(listaCompleta.length);
         ordemTurno = listaCompleta.sort(() => Math.random() - 0.5);
         turnoIndex = 0;
@@ -301,6 +300,14 @@ io.on('connection', (socket) => {
         }
     });
 
+    // COMANDO DE MATAR (Só aceita se for o assassino e na vez dele)
+    socket.on('assassinarPlayer', (idAlvo) => {
+        let jogadorDaVez = ordemTurno[turnoIndex];
+        if(jogadorDaVez && jogadorDaVez.id === socket.id && jogadorDaVez.role === 'assassin') {
+            executarAssassinato(jogadorDaVez, idAlvo);
+        }
+    });
+
     socket.on('disconnect', () => {
         if(jogadores[socket.id]) { jogadores[socket.id].vivo = false; delete jogadores[socket.id]; }
         let humanos = Object.values(jogadores).filter(j => !j.ehBot);
@@ -311,4 +318,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR COM CAOS: ${PORT}`); });
+server.listen(PORT, () => { console.log(`SERVIDOR COM ASSASSINO: ${PORT}`); });
