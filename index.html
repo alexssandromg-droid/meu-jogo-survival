@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Survival Royale: TABULEIRO</title>
+    <title>Survival Royale: APOSTAS</title>
     <script src="/socket.io/socket.io.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
     <style>
@@ -13,49 +13,48 @@
         }
         body { background-color: var(--bg-dark); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; height: 100vh; overflow: hidden; user-select: none; display: flex; flex-direction: column; }
 
+        /* APOSTA MODAL (NOVO) */
+        #betting-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 20, 0, 0.98); z-index: 1000 !important;
+            flex-direction: column; justify-content: center; align-items: center;
+        }
+        .bet-title { font-size: 35px; color: var(--neon-gold); margin-bottom: 20px; text-align: center; }
+        .bet-container { display: flex; gap: 30px; }
+        .bet-btn {
+            width: 150px; height: 150px; background: #222; border: 4px solid #555;
+            border-radius: 10px; color: white; font-size: 20px; font-weight: bold; cursor: pointer;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            transition: 0.3s;
+        }
+        .bet-btn:hover { transform: scale(1.1); border-color: var(--neon-gold); background: #333; }
+        .bet-btn.selected { background: var(--neon-green); border-color: white; color: black; }
+
         /* TABULEIRO OVERLAY */
         #board-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background: #111; z-index: 2000 !important;
             flex-direction: column; justify-content: flex-start; align-items: center; padding-top: 20px;
         }
-        .board-track {
-            display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; max-width: 90%; margin-top: 20px;
-        }
+        .board-track { display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; max-width: 90%; margin-top: 20px; }
         .board-cell {
             width: 40px; height: 40px; border: 1px solid #444; background: #222;
             display: flex; justify-content: center; align-items: center; font-size: 12px; color: #555; position: relative;
         }
         .board-cell.trap { border-color: red; background: #330000; }
         .board-cell.finish { border-color: gold; background: #333300; }
-        
-        .p-token {
-            width: 20px; height: 20px; border-radius: 50%; position: absolute; box-shadow: 0 0 5px black;
-            font-size: 10px; display: flex; justify-content: center; align-items: center; color: black; font-weight: bold;
-        }
+        .p-token { width: 20px; height: 20px; border-radius: 50%; position: absolute; box-shadow: 0 0 5px black; display: flex; justify-content: center; align-items: center; color: black; font-weight: bold; font-size: 10px; }
 
         #dice-area { margin-top: 30px; text-align: center; }
-        #dice-btn {
-            font-size: 50px; background: none; border: 2px solid white; color: white;
-            border-radius: 10px; width: 100px; height: 100px; cursor: pointer; transition: 0.2s;
-        }
+        #dice-btn { font-size: 50px; background: none; border: 2px solid white; color: white; border-radius: 10px; width: 100px; height: 100px; cursor: pointer; transition: 0.2s; }
         #dice-btn:hover { background: white; color: black; }
         #dice-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        
         #board-msg { font-size: 24px; color: var(--neon-gold); margin-bottom: 10px; }
 
         /* VOTAÇÃO MODAL */
-        #voting-modal {
-            display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(10, 10, 10, 0.98); z-index: 999;
-            flex-direction: column; justify-content: center; align-items: center;
-        }
+        #voting-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(10, 10, 10, 0.98); z-index: 999; flex-direction: column; justify-content: center; align-items: center; }
         .vote-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 800px; width: 95%; max-height: 60vh; overflow-y: auto; padding: 10px; }
-        .vote-btn {
-            background: #222; border: 2px solid #555; color: white; padding: 15px;
-            font-size: 16px; border-radius: 8px; cursor: pointer; transition: 0.2s;
-            font-family: 'Rajdhani', sans-serif; text-transform: uppercase; width: 100%;
-        }
+        .vote-btn { background: #222; border: 2px solid #555; color: white; padding: 15px; font-size: 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-family: 'Rajdhani', sans-serif; text-transform: uppercase; width: 100%; }
         .vote-btn:hover { background: var(--neon-blue); border-color: white; }
 
         /* UI GERAL */
@@ -104,14 +103,36 @@
         #message-box { font-size: 24px; font-weight: bold; margin-bottom: 10px; height: 35px; text-shadow: 0 2px 10px black; }
         #timer-txt { font-size: 24px; color: var(--neon-gold); font-family: monospace; font-weight: bold; }
         #victory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
+        
         @keyframes shake { 0% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} 100% {transform: translateX(0);} }
-        @media (max-width: 600px) { #main-container { flex-direction: column-reverse; } #sidebar { width: 100%; height: 150px; } #rooms-grid { grid-template-columns: repeat(4, 1fr) !important; padding: 5px; } .logo-title { font-size: 40px; } .vote-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 600px) { 
+            #main-container { flex-direction: column-reverse; } 
+            #sidebar { width: 100%; height: 150px; } 
+            #rooms-grid { grid-template-columns: repeat(4, 1fr) !important; padding: 5px; } 
+            .logo-title { font-size: 40px; }
+            .vote-grid { grid-template-columns: repeat(2, 1fr); }
+        }
     </style>
 </head>
 <body>
 
     <button id="btn-admin-toggle" onclick="abrirAdmin()">⚙️</button>
     <div class="online-badge"><div class="online-dot"></div><span id="online-count">1</span> ONLINE</div>
+
+    <div id="betting-modal">
+        <div class="bet-title">QUEM VAI VENCER?</div>
+        <div class="bet-container">
+            <div class="bet-btn" id="bet-p1" onclick="apostar(1)">
+                <span id="name-p1">Player 1</span>
+            </div>
+            <div style="font-size:30px; color:white; align-self:center;">VS</div>
+            <div class="bet-btn" id="bet-p2" onclick="apostar(2)">
+                <span id="name-p2">Player 2</span>
+            </div>
+        </div>
+        <div style="margin-top:20px; color:var(--neon-red); font-size:14px;">SE APOSTAR ERRADO E NÃO TIVER ESCUDO, VOCÊ MORRE!</div>
+        <div style="margin-top:10px; color:#aaa; font-size:12px;">(Espectadores também morrem)</div>
+    </div>
 
     <div id="board-overlay">
         <h2 style="color:var(--neon-gold); margin:0;">CORRIDA MORTAL</h2>
@@ -190,7 +211,7 @@
 
     <script>
         const socket = io();
-        let meuId=null, minhaVez=false; timerVisual=null;
+        let meuId=null, minhaVez=false; timerVisual=null; let apostaP1Id=null, apostaP2Id=null;
 
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playTone(f,t,d){if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type=t;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.01,audioCtx.currentTime+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d);}
@@ -238,29 +259,56 @@
         socket.on('progressoVotacao', (d) => { document.getElementById('vote-status').innerText = `Computando: ${d.atual}/${d.total}`; });
         socket.on('fecharVotacao', () => { document.getElementById('voting-modal').style.display = 'none'; });
 
+        // --- APOSTAS (NOVO) ---
+        socket.on('abrirApostasUI', (d) => {
+            apostaP1Id = d.p1.id; apostaP2Id = d.p2.id;
+            document.getElementById('betting-modal').style.display = 'flex';
+            document.getElementById('name-p1').innerText = d.p1.nome;
+            document.getElementById('name-p2').innerText = d.p2.nome;
+            
+            // Remove selecao anterior
+            document.getElementById('bet-p1').classList.remove('selected');
+            document.getElementById('bet-p2').classList.remove('selected');
+            
+            // Se eu sou um dos lutadores, não deveria apostar (mas o server ignora meu voto então ok)
+        });
+
+        function apostar(qual) {
+            let idEscolhido = (qual === 1) ? apostaP1Id : apostaP2Id;
+            socket.emit('fazerAposta', idEscolhido);
+            
+            document.getElementById('bet-p1').classList.remove('selected');
+            document.getElementById('bet-p2').classList.remove('selected');
+            document.getElementById(`bet-p${qual}`).classList.add('selected');
+            SFX.click();
+        }
+
+        socket.on('fecharApostasUI', () => {
+            document.getElementById('betting-modal').style.display = 'none';
+        });
+
         // --- BOARD GAME ---
+        let boardP1=null, boardP2=null;
         socket.on('iniciarBoardUI', (d) => {
+            boardP1 = d.p1.id; boardP2 = d.p2.id;
             document.getElementById('board-overlay').style.display = 'flex';
             document.getElementById('board-msg').innerText = `${d.p1.nome} VS ${d.p2.nome}`;
             
-            // Build Track
             const track = document.getElementById('board-track');
             track.innerHTML = '';
             for(let i=0; i<=d.tamanho; i++) {
                 let cell = document.createElement('div');
                 cell.className = 'board-cell';
-                if(i===13 || i===7) cell.classList.add('trap'); // Visual trap example
+                if(i===13 || i===7) cell.classList.add('trap');
                 if(i===d.tamanho) cell.classList.add('finish');
                 cell.innerText = i;
                 
-                // Add tokens placeholders
                 let tk1 = document.createElement('div'); tk1.className='p-token'; tk1.id=`bt-p1-${i}`; tk1.style.background='cyan'; tk1.style.left='2px'; tk1.style.display='none'; tk1.innerText='1';
                 let tk2 = document.createElement('div'); tk2.className='p-token'; tk2.id=`bt-p2-${i}`; tk2.style.background='magenta'; tk2.style.right='2px'; tk2.style.display='none'; tk2.innerText='2';
                 
                 cell.appendChild(tk1); cell.appendChild(tk2);
                 track.appendChild(cell);
             }
-            // Init tokens at 0
             document.getElementById(`bt-p1-0`).style.display='flex';
             document.getElementById(`bt-p2-0`).style.display='flex';
         });
@@ -268,89 +316,29 @@
         socket.on('vezBoard', (d) => {
             let btn = document.getElementById('dice-btn');
             if(d.id === meuId) {
-                btn.disabled = false;
-                btn.innerText = "🎲";
-                document.getElementById('board-msg').innerText = "SUA VEZ DE JOGAR O DADO!";
+                btn.disabled = false; btn.innerText = "🎲";
+                document.getElementById('board-msg').innerText = "SUA VEZ!";
             } else {
-                btn.disabled = true;
-                btn.innerText = "⏳";
+                btn.disabled = true; btn.innerText = "⏳";
                 document.getElementById('board-msg').innerText = `VEZ DE ${d.nome}`;
             }
         });
 
-        function rolarDado() {
-            socket.emit('pedirDado');
-            SFX.click();
-        }
+        function rolarDado() { socket.emit('pedirDado'); SFX.click(); }
 
         socket.on('dadoRolado', (d) => {
             SFX.dice();
-            let btn = document.getElementById('dice-btn');
-            btn.innerText = d.dado;
-            
-            // Move visual
-            // Hide all tokens for this player
-            let pIndex = (d.id === document.getElementById('game-players-list').firstChild.id.split('-')[1]) ? 'p1' : 'p2'; // Simplificado, na real precisaria mapear ID para P1/P2 corretamente
-            // Hack visual rápido: vamos limpar tudo e redesenhar base no ID
-            // Melhor: o server devia mandar "posições atuais" de ambos
-            
-            // Simplesmente achamos o token antigo e movemos
-            // Na v2 idealmente o server manda estado completo
-            
-            // Como não temos estado completo aqui, vamos confiar na logica:
-            // O server manda d.pos. 
-            // Precisamos saber se é o P1 ou P2 da UI.
-            // Vamos iterar
-            
-            // Reset tokens
-            for(let i=0; i<=20; i++) {
-                let t1 = document.getElementById(`bt-p1-${i}`);
-                let t2 = document.getElementById(`bt-p2-${i}`);
-                if(t1) t1.style.display='none';
-                if(t2) t2.style.display='none';
-            }
-            // Esse update visual tá meio fraco porque não persistimos quem é quem.
-            // Para consertar rápido: O server manda POSIÇÕES de ambos sempre que atualiza
-            // Mas no payload atual só vem um.
-            // Vamos deixar visualmente simples: Mostra apenas o número do dado e a posição.
-            
-            // Recarrega tokens (gambiarra visual funcional)
-            // Assumimos que P1 é quem jogou agora se... ah, complexo.
-            // Vamos só mostrar o dado e atualizar texto por enquanto para não bugar.
-            
-            // MELHORIA: O server na v2.1 mandará { p1Id: x, p1Pos: y, p2Id: z, p2Pos: w }
-            // Com o código atual, vamos só mostrar msg no chat
-        });
-        
-        // CORREÇÃO VISUAL RÁPIDA P/ BOARD
-        // Vamos apenas ouvir "salaOcupada" style events mas para board
-        // O server atual não manda positions full.
-        // Vamos confiar no 'iniciarBoardUI' resetando e só mover quem jogou.
-        // Mas como não sei quem é P1 e P2 visualmente aqui...
-        // Ok, o server precisa mandar QUEM é P1 e P2 no init.
-        // O cliente guarda isso.
-        
-        let boardP1=null, boardP2=null;
-        socket.on('iniciarBoardUI', (d) => {
-            boardP1 = d.p1.id; boardP2 = d.p2.id; // Guarda IDs
-            // ... resto do init ...
-        });
-        
-        socket.on('dadoRolado', (d) => {
-            // Agora sabemos
+            document.getElementById('dice-btn').innerText = d.dado;
             let suffix = (d.id === boardP1) ? 'p1' : 'p2';
-            // Limpa tokens desse player
             for(let i=0; i<=20; i++) {
                 let t = document.getElementById(`bt-${suffix}-${i}`);
                 if(t) t.style.display = 'none';
             }
-            // Mostra novo
             let novo = document.getElementById(`bt-${suffix}-${d.pos}`);
             if(novo) novo.style.display = 'flex';
             
             if(d.msg) document.getElementById('board-msg').innerText += d.msg;
         });
-
 
         socket.on('atualizarLista',(jogadores)=>{
             document.getElementById('lobby-list').innerHTML=jogadores.map(j=>`<div style="color:${j.id===meuId?'#00e676':'white'}">${j.nome}</div>`).join('');
@@ -372,7 +360,7 @@
             renderizarGrid(d.salas);
         });
         socket.on('novaRodada',(d)=>{
-            document.getElementById('board-overlay').style.display = 'none'; // Fecha tabuleiro se tava aberto
+            document.getElementById('board-overlay').style.display = 'none'; 
             renderizarGrid(d.salas);document.getElementById('message-box').innerText=`RODADA ${d.fase}`;
         });
 
