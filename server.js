@@ -13,10 +13,8 @@ app.get('/', (req, res) => {
 let gameConfig = {
     maxJogadores: 20,
     vidasIniciais: 2,
-    velocidadeBot: 500,
-    fatorPortas: 1.2,   // 1.2x o numero de jogadores (salas apertadas)
-    chanceGas: 0.4,     // 40% das salas tem Gás (MUITO GÁS)
-    chanceChave: 0.2    // 20% das salas tem Chave (Várias chaves)
+    velocidadeBot: 500,  // 0.5 segundos
+    fatorPortas: 1.0     // 1 porta por jogador (padrão)
 };
 
 // === DADOS DO JOGO ===
@@ -29,28 +27,18 @@ let timerTurno = null;
 let faseAtual = 1;
 let hallDaFama = [];
 
-// === GERADOR DE SALAS (AGRESSIVO) ===
+// === AUXILIARES ===
 function iniciarSalas(qtdJogadores) {
-    // Arena encolhe conforme jogadores morrem
     let qtdPortas = Math.ceil(qtdJogadores * gameConfig.fatorPortas);
-    if(qtdPortas < qtdJogadores) qtdPortas = qtdJogadores; // Mínimo para caber todo mundo
-    
-    let conteudos = [];
-    
-    // Calcula quantidades baseadas nas configs
-    let qtdChaves = Math.max(1, Math.floor(qtdPortas * gameConfig.chanceChave));
-    let qtdGas = Math.floor(qtdPortas * gameConfig.chanceGas);
-    let qtdVida = Math.floor(qtdPortas * 0.1); // 10% vida fixo
+    if(qtdPortas < qtdJogadores) qtdPortas = qtdJogadores;
 
-    // Adiciona os itens
-    for(let i=0; i<qtdChaves; i++) conteudos.push('chave');
+    let conteudos = ['chave'];
+    let qtdGas = Math.max(1, Math.floor(qtdPortas * 0.2)); // 20% Gás
     for(let i=0; i<qtdGas; i++) conteudos.push('gas');
+    let qtdVida = Math.max(1, Math.floor(qtdPortas * 0.1)); // 10% Vida
     for(let i=0; i<qtdVida; i++) conteudos.push('vida');
     
-    // Completa com vazio
     while(conteudos.length < qtdPortas) { conteudos.push('vazio'); }
-    
-    // Embaralha tudo
     conteudos.sort(() => Math.random() - 0.5);
 
     return conteudos.map((tipo, index) => ({
@@ -68,7 +56,7 @@ function processarProximoTurno() {
     clearTimeout(timerTurno);
 
     if(turnoIndex >= ordemTurno.length) {
-        io.emit('mensagem', { texto: "⚠️ HORA DO EXPURGO...", cor: "orange" });
+        io.emit('mensagem', { texto: "⚠️ ASSASSINO MIRANDO...", cor: "orange" });
         setTimeout(faseExplosao, 2000);
         return;
     }
@@ -88,7 +76,7 @@ function processarProximoTurno() {
         timerTurno = setTimeout(() => { jogadaDoBot(jogadorAtual); }, gameConfig.velocidadeBot);
     } else {
         timerTurno = setTimeout(() => {
-            io.emit('mensagem', { texto: `${jogadorAtual.nome} DORMIU!`, cor: "red" });
+            io.emit('mensagem', { texto: `${jogadorAtual.nome} DEMOROU!`, cor: "red" });
             jogadaDoBot(jogadorAtual);
         }, 10000);
     }
@@ -98,7 +86,6 @@ function jogadaDoBot(jogador) {
     if(!jogoAndando) return;
     let salasLivres = salasData.filter(s => !s.bloqueada);
     if(salasLivres.length > 0) {
-        // Bot tenta pegar chaves se "soubesse" (aleatório por enquanto)
         let escolha = salasLivres[Math.floor(Math.random() * salasLivres.length)];
         resolverEntrada(escolha.id, jogador.id);
     } else {
@@ -120,40 +107,36 @@ function resolverEntrada(idSala, idJogador) {
 
         if(sala.tipo === 'gas') jogador.vidas -= 1;
         if(sala.tipo === 'vida') jogador.vidas += 1;
-        if(sala.tipo === 'chave') jogador.temChave = true; // FICOU IMUNE!
-
+        if(sala.tipo === 'chave') jogador.temChave = true;
         if(jogador.vidas <= 0) jogador.vivo = false;
 
         io.emit('salaOcupada', { idSala: idSala, jogador: jogador, efeito: sala.tipo });
         io.emit('atualizarLista', Object.values(jogadores));
 
         turnoIndex++;
-        setTimeout(processarProximoTurno, 600);
+        setTimeout(processarProximoTurno, 800);
     }
 }
 
 function faseExplosao() {
     if(!jogoAndando) return;
     
-    // QUEM NÃO TEM CHAVE EXPLODE (A menos que já tenha morrido antes)
-    let alvos = ordemTurno.filter(j => j.vivo && !j.temChave);
+    // LÓGICA CLÁSSICA: Escolhe UM alvo sem chave para morrer
+    let alvos = ordemTurno.filter(j => j.vivo && j.sala && !j.temChave);
     
     if(alvos.length > 0) {
-        alvos.forEach(vitima => {
-            vitima.vivo = false;
-            vitima.vidas = 0;
-            if(vitima.sala) {
-                io.emit('efeitoExplosao', { idSala: vitima.sala, nome: vitima.nome });
-            }
-        });
-        io.emit('mensagem', { texto: `💥 SEM CHAVE = ELIMINADO!`, cor: "red" });
+        let vitima = alvos[Math.floor(Math.random() * alvos.length)];
+        vitima.vivo = false;
+        vitima.vidas = 0;
+        io.emit('efeitoExplosao', { idSala: vitima.sala, nome: vitima.nome });
+        io.emit('mensagem', { texto: `💥 ${vitima.nome} ELIMINADO!`, cor: "red" });
     } else {
-        io.emit('mensagem', { texto: "TODOS ENCONTRARAM CHAVES!", cor: "#00e676" });
+        io.emit('mensagem', { texto: "ASSASSINO NÃO ACHOU NINGUÉM!", cor: "yellow" });
     }
 
     io.emit('atualizarLista', Object.values(jogadores));
     
-    // Quem sobrou vai pro próximo nível
+    // Verifica fim de jogo
     let vivos = Object.values(jogadores).filter(j => j.vivo);
     
     setTimeout(() => {
@@ -178,19 +161,15 @@ function faseExplosao() {
 
 function iniciarNovaRodada(sobreviventes) {
     faseAtual++;
-    
-    // Reseta status para o próximo nível
+    // Reseta status para nova rodada (mantendo vidas atuais)
     sobreviventes.forEach(j => { 
-        j.vidas = gameConfig.vidasIniciais; // Recupera vida (prêmio por passar de fase)
-        j.temChave = false; // Perde a chave usada
+        j.temChave = false; 
         j.sala = null; 
     });
     
-    // Limpa mortos da memória ativa
     jogadores = {};
     sobreviventes.forEach(j => jogadores[j.id] = j);
     
-    // Gera arena MENOR (baseada só nos sobreviventes)
     let lista = Object.values(jogadores);
     salasData = iniciarSalas(lista.length);
     ordemTurno = lista.sort(() => Math.random() - 0.5);
@@ -213,9 +192,6 @@ io.on('connection', (socket) => {
         if(nova.vidasIniciais) gameConfig.vidasIniciais = parseInt(nova.vidasIniciais);
         if(nova.velocidadeBot) gameConfig.velocidadeBot = parseInt(nova.velocidadeBot);
         if(nova.fatorPortas) gameConfig.fatorPortas = parseFloat(nova.fatorPortas);
-        if(nova.chanceGas) gameConfig.chanceGas = parseFloat(nova.chanceGas);
-        if(nova.chanceChave) gameConfig.chanceChave = parseFloat(nova.chanceChave);
-        
         io.emit('mensagem', { texto: "⚙️ REGRAS ATUALIZADAS!", cor: "#00e676" });
     });
 
