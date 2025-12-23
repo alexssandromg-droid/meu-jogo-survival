@@ -9,12 +9,14 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 
-// === CONFIGURAÇÕES GLOBAIS (PADRÃO) ===
+// === CONFIGURAÇÕES GLOBAIS ===
 let gameConfig = {
-    maxJogadores: 20,    // Quantos bots + humanos total
-    vidasIniciais: 2,    // Quantas vidas cada um começa
-    velocidadeBot: 500,  // Milissegundos (menor = mais rápido)
-    fatorPortas: 1.0     // 1.0 = 1 porta por jogador. 2.0 = dobro de portas
+    maxJogadores: 20,
+    vidasIniciais: 2,
+    velocidadeBot: 500,
+    fatorPortas: 1.2,   // 1.2x o numero de jogadores (salas apertadas)
+    chanceGas: 0.4,     // 40% das salas tem Gás (MUITO GÁS)
+    chanceChave: 0.2    // 20% das salas tem Chave (Várias chaves)
 };
 
 // === DADOS DO JOGO ===
@@ -27,20 +29,28 @@ let timerTurno = null;
 let faseAtual = 1;
 let hallDaFama = [];
 
-// === AUXILIARES ===
+// === GERADOR DE SALAS (AGRESSIVO) ===
 function iniciarSalas(qtdJogadores) {
-    // Calcula portas baseado na config
+    // Arena encolhe conforme jogadores morrem
     let qtdPortas = Math.ceil(qtdJogadores * gameConfig.fatorPortas);
+    if(qtdPortas < qtdJogadores) qtdPortas = qtdJogadores; // Mínimo para caber todo mundo
     
-    // Garante que tenha pelo menos itens básicos
-    let conteudos = ['chave'];
-    let qtdGas = Math.max(1, Math.floor(qtdPortas * 0.2));
+    let conteudos = [];
+    
+    // Calcula quantidades baseadas nas configs
+    let qtdChaves = Math.max(1, Math.floor(qtdPortas * gameConfig.chanceChave));
+    let qtdGas = Math.floor(qtdPortas * gameConfig.chanceGas);
+    let qtdVida = Math.floor(qtdPortas * 0.1); // 10% vida fixo
+
+    // Adiciona os itens
+    for(let i=0; i<qtdChaves; i++) conteudos.push('chave');
     for(let i=0; i<qtdGas; i++) conteudos.push('gas');
-    let qtdVida = Math.max(1, Math.floor(qtdPortas * 0.1));
     for(let i=0; i<qtdVida; i++) conteudos.push('vida');
     
-    // Preenche o resto com vazio
+    // Completa com vazio
     while(conteudos.length < qtdPortas) { conteudos.push('vazio'); }
+    
+    // Embaralha tudo
     conteudos.sort(() => Math.random() - 0.5);
 
     return conteudos.map((tipo, index) => ({
@@ -49,17 +59,16 @@ function iniciarSalas(qtdJogadores) {
 }
 
 function atualizarContadorOnline() {
-    let total = io.engine.clientsCount;
-    io.emit('jogadoresOnline', total);
+    io.emit('jogadoresOnline', io.engine.clientsCount);
 }
 
-// === LÓGICA DO JOGO ===
+// === LÓGICA DE TURNOS ===
 function processarProximoTurno() {
     if(!jogoAndando) return;
     clearTimeout(timerTurno);
 
     if(turnoIndex >= ordemTurno.length) {
-        io.emit('mensagem', { texto: "⚠️ ASSASSINO MIRANDO...", cor: "orange" });
+        io.emit('mensagem', { texto: "⚠️ HORA DO EXPURGO...", cor: "orange" });
         setTimeout(faseExplosao, 2000);
         return;
     }
@@ -72,17 +81,14 @@ function processarProximoTurno() {
     }
 
     io.emit('mudancaDeTurno', { 
-        idJogador: jogadorAtual.id, 
-        nome: jogadorAtual.nome,
-        tempo: 10
+        idJogador: jogadorAtual.id, nome: jogadorAtual.nome, tempo: 10
     });
 
     if(jogadorAtual.ehBot) {
-        // Usa a velocidade configurada
         timerTurno = setTimeout(() => { jogadaDoBot(jogadorAtual); }, gameConfig.velocidadeBot);
     } else {
         timerTurno = setTimeout(() => {
-            io.emit('mensagem', { texto: `${jogadorAtual.nome} DEMOROU!`, cor: "red" });
+            io.emit('mensagem', { texto: `${jogadorAtual.nome} DORMIU!`, cor: "red" });
             jogadaDoBot(jogadorAtual);
         }, 10000);
     }
@@ -92,6 +98,7 @@ function jogadaDoBot(jogador) {
     if(!jogoAndando) return;
     let salasLivres = salasData.filter(s => !s.bloqueada);
     if(salasLivres.length > 0) {
+        // Bot tenta pegar chaves se "soubesse" (aleatório por enquanto)
         let escolha = salasLivres[Math.floor(Math.random() * salasLivres.length)];
         resolverEntrada(escolha.id, jogador.id);
     } else {
@@ -113,32 +120,40 @@ function resolverEntrada(idSala, idJogador) {
 
         if(sala.tipo === 'gas') jogador.vidas -= 1;
         if(sala.tipo === 'vida') jogador.vidas += 1;
-        if(sala.tipo === 'chave') jogador.temChave = true;
+        if(sala.tipo === 'chave') jogador.temChave = true; // FICOU IMUNE!
+
         if(jogador.vidas <= 0) jogador.vivo = false;
 
         io.emit('salaOcupada', { idSala: idSala, jogador: jogador, efeito: sala.tipo });
         io.emit('atualizarLista', Object.values(jogadores));
 
         turnoIndex++;
-        setTimeout(processarProximoTurno, 800);
+        setTimeout(processarProximoTurno, 600);
     }
 }
 
 function faseExplosao() {
     if(!jogoAndando) return;
-    let alvos = ordemTurno.filter(j => j.vivo && j.sala && !j.temChave);
+    
+    // QUEM NÃO TEM CHAVE EXPLODE (A menos que já tenha morrido antes)
+    let alvos = ordemTurno.filter(j => j.vivo && !j.temChave);
     
     if(alvos.length > 0) {
-        let vitima = alvos[Math.floor(Math.random() * alvos.length)];
-        vitima.vivo = false;
-        vitima.vidas = 0;
-        io.emit('efeitoExplosao', { idSala: vitima.sala, nome: vitima.nome });
-        io.emit('mensagem', { texto: `💥 ${vitima.nome} ELIMINADO!`, cor: "red" });
+        alvos.forEach(vitima => {
+            vitima.vivo = false;
+            vitima.vidas = 0;
+            if(vitima.sala) {
+                io.emit('efeitoExplosao', { idSala: vitima.sala, nome: vitima.nome });
+            }
+        });
+        io.emit('mensagem', { texto: `💥 SEM CHAVE = ELIMINADO!`, cor: "red" });
     } else {
-        io.emit('mensagem', { texto: "ASSASSINO NÃO ACHOU NINGUÉM!", cor: "yellow" });
+        io.emit('mensagem', { texto: "TODOS ENCONTRARAM CHAVES!", cor: "#00e676" });
     }
 
     io.emit('atualizarLista', Object.values(jogadores));
+    
+    // Quem sobrou vai pro próximo nível
     let vivos = Object.values(jogadores).filter(j => j.vivo);
     
     setTimeout(() => {
@@ -148,14 +163,13 @@ function faseExplosao() {
             
             if(campeao.nome !== "NINGUÉM") {
                 hallDaFama.unshift({ 
-                    nome: campeao.nome,
+                    nome: campeao.nome, 
                     data: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})
                 });
                 if(hallDaFama.length > 10) hallDaFama.pop();
             }
-
             io.emit('fimDeJogo', { campeao: campeao });
-            io.emit('atualizarRanking', hallDaFama); // Atualiza rank para todos
+            io.emit('atualizarRanking', hallDaFama);
         } else {
             iniciarNovaRodada(vivos);
         }
@@ -164,17 +178,19 @@ function faseExplosao() {
 
 function iniciarNovaRodada(sobreviventes) {
     faseAtual++;
+    
+    // Reseta status para o próximo nível
     sobreviventes.forEach(j => { 
-        // Vidas não resetam (acumula dano) ou resetam? 
-        // No original resetava para 2. Vamos usar a config aqui também.
-        j.vidas = gameConfig.vidasIniciais; 
-        j.temChave = false; 
+        j.vidas = gameConfig.vidasIniciais; // Recupera vida (prêmio por passar de fase)
+        j.temChave = false; // Perde a chave usada
         j.sala = null; 
     });
     
+    // Limpa mortos da memória ativa
     jogadores = {};
     sobreviventes.forEach(j => jogadores[j.id] = j);
     
+    // Gera arena MENOR (baseada só nos sobreviventes)
     let lista = Object.values(jogadores);
     salasData = iniciarSalas(lista.length);
     ordemTurno = lista.sort(() => Math.random() - 0.5);
@@ -184,45 +200,31 @@ function iniciarNovaRodada(sobreviventes) {
     setTimeout(processarProximoTurno, 1000);
 }
 
-// === CONEXÃO SOCKET ===
+// === CONEXÃO ===
 io.on('connection', (socket) => {
     atualizarContadorOnline();
     socket.emit('atualizarRanking', hallDaFama);
-    // Envia configs atuais pro admin saber
     socket.emit('configAtual', gameConfig);
 
-    // --- COMANDOS DE ADMIN ---
-    socket.on('adminLogin', (senha) => {
-        if(senha === 'admin') { // SENHA SIMPLES
-            socket.emit('adminLogado', true);
-        } else {
-            socket.emit('adminLogado', false);
-        }
-    });
+    socket.on('adminLogin', (s) => socket.emit('adminLogado', s === 'admin'));
 
-    socket.on('adminSalvarConfig', (novaConfig) => {
-        // Validação básica
-        if(novaConfig.maxJogadores) gameConfig.maxJogadores = parseInt(novaConfig.maxJogadores);
-        if(novaConfig.vidasIniciais) gameConfig.vidasIniciais = parseInt(novaConfig.vidasIniciais);
-        if(novaConfig.velocidadeBot) gameConfig.velocidadeBot = parseInt(novaConfig.velocidadeBot);
-        if(novaConfig.fatorPortas) gameConfig.fatorPortas = parseFloat(novaConfig.fatorPortas);
+    socket.on('adminSalvarConfig', (nova) => {
+        if(nova.maxJogadores) gameConfig.maxJogadores = parseInt(nova.maxJogadores);
+        if(nova.vidasIniciais) gameConfig.vidasIniciais = parseInt(nova.vidasIniciais);
+        if(nova.velocidadeBot) gameConfig.velocidadeBot = parseInt(nova.velocidadeBot);
+        if(nova.fatorPortas) gameConfig.fatorPortas = parseFloat(nova.fatorPortas);
+        if(nova.chanceGas) gameConfig.chanceGas = parseFloat(nova.chanceGas);
+        if(nova.chanceChave) gameConfig.chanceChave = parseFloat(nova.chanceChave);
         
-        console.log("Config atualizada:", gameConfig);
-        io.emit('mensagem', { texto: "⚙️ REGRAS DO JOGO ALTERADAS!", cor: "#00e676" });
+        io.emit('mensagem', { texto: "⚙️ REGRAS ATUALIZADAS!", cor: "#00e676" });
     });
 
-    socket.on('adminZerarRank', () => {
-        hallDaFama = [];
-        io.emit('atualizarRanking', hallDaFama);
-        io.emit('mensagem', { texto: "🏆 RANKING RESETADO!", cor: "orange" });
-    });
-    // -------------------------
+    socket.on('adminZerarRank', () => { hallDaFama = []; io.emit('atualizarRanking', hallDaFama); });
 
     socket.on('entrar', (dados) => {
         jogadores[socket.id] = {
             id: socket.id, nome: dados.nome, tipo: dados.tipo,
-            vidas: gameConfig.vidasIniciais, // Usa Config
-            temChave: false, sala: null, vivo: true, ehBot: false
+            vidas: gameConfig.vidasIniciais, temChave: false, sala: null, vivo: true, ehBot: false
         };
         io.emit('atualizarLista', Object.values(jogadores));
     });
@@ -230,8 +232,6 @@ io.on('connection', (socket) => {
     socket.on('iniciarJogo', () => {
         if(jogoAndando) return;
         let lista = Object.values(jogadores);
-        
-        // Completa até o MaxJogadores da Config
         let qtdFaltante = gameConfig.maxJogadores - lista.length;
         if(qtdFaltante < 0) qtdFaltante = 0;
 
@@ -239,8 +239,7 @@ io.on('connection', (socket) => {
             let idBot = `bot-${Date.now()}-${i}`;
             jogadores[idBot] = {
                 id: idBot, nome: `Bot ${i}`, tipo: 'bot',
-                vidas: gameConfig.vidasIniciais, // Usa Config
-                temChave: false, sala: null, vivo: true, ehBot: true
+                vidas: gameConfig.vidasIniciais, temChave: false, sala: null, vivo: true, ehBot: true
             };
         }
         let listaCompleta = Object.values(jogadores);
@@ -261,13 +260,9 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        if(jogadores[socket.id]) {
-            jogadores[socket.id].vivo = false;
-            delete jogadores[socket.id];
-        }
+        if(jogadores[socket.id]) { jogadores[socket.id].vivo = false; delete jogadores[socket.id]; }
         let humanos = Object.values(jogadores).filter(j => !j.ehBot);
         if(humanos.length === 0) { jogoAndando = false; jogadores = {}; }
-        
         io.emit('atualizarLista', Object.values(jogadores));
         atualizarContadorOnline();
     });
