@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Survival Royale: APOSTAS</title>
+    <title>Survival Royale 5 GAMES</title>
     <script src="/socket.io/socket.io.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
     <style>
@@ -13,400 +13,279 @@
         }
         body { background-color: var(--bg-dark); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; height: 100vh; overflow: hidden; user-select: none; display: flex; flex-direction: column; }
 
-        /* APOSTA MODAL (NOVO) */
-        #betting-modal {
+        /* --- MINIGAME OVERLAYS --- */
+        .minigame-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0, 20, 0, 0.98); z-index: 1000 !important;
+            background: rgba(10, 10, 10, 0.98); z-index: 2000 !important;
             flex-direction: column; justify-content: center; align-items: center;
         }
-        .bet-title { font-size: 35px; color: var(--neon-gold); margin-bottom: 20px; text-align: center; }
-        .bet-container { display: flex; gap: 30px; }
-        .bet-btn {
-            width: 150px; height: 150px; background: #222; border: 4px solid #555;
-            border-radius: 10px; color: white; font-size: 20px; font-weight: bold; cursor: pointer;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            transition: 0.3s;
-        }
-        .bet-btn:hover { transform: scale(1.1); border-color: var(--neon-gold); background: #333; }
-        .bet-btn.selected { background: var(--neon-green); border-color: white; color: black; }
+        .mg-title { font-size: 40px; color: white; margin-bottom: 20px; text-shadow: 0 0 10px white; }
+        .mg-vs { font-size: 20px; color: #aaa; margin-bottom: 30px; }
 
-        /* TABULEIRO OVERLAY */
-        #board-overlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: #111; z-index: 2000 !important;
-            flex-direction: column; justify-content: flex-start; align-items: center; padding-top: 20px;
-        }
-        .board-track { display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; max-width: 90%; margin-top: 20px; }
-        .board-cell {
-            width: 40px; height: 40px; border: 1px solid #444; background: #222;
-            display: flex; justify-content: center; align-items: center; font-size: 12px; color: #555; position: relative;
-        }
-        .board-cell.trap { border-color: red; background: #330000; }
-        .board-cell.finish { border-color: gold; background: #333300; }
-        .p-token { width: 20px; height: 20px; border-radius: 50%; position: absolute; box-shadow: 0 0 5px black; display: flex; justify-content: center; align-items: center; color: black; font-weight: bold; font-size: 10px; }
+        /* BOARD */
+        .board-cell { width: 35px; height: 35px; border: 1px solid #444; background: #222; display: flex; justify-content: center; align-items: center; font-size: 10px; position: relative; margin: 2px; }
+        .p-token { width: 15px; height: 15px; border-radius: 50%; position: absolute; }
+        
+        /* MEMORY */
+        .mem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .mem-btn { width: 100px; height: 100px; border-radius: 10px; border: 3px solid #333; opacity: 0.5; cursor: pointer; }
+        .mem-btn.active { opacity: 1; transform: scale(1.1); box-shadow: 0 0 20px currentColor; border-color: white; }
+        
+        /* REFLEX */
+        #reflex-btn { width: 200px; height: 200px; border-radius: 50%; background: #500; border: 5px solid white; font-size: 30px; color: white; cursor: pointer; }
+        
+        /* CLICKER */
+        #clicker-btn { width: 200px; height: 100px; background: var(--neon-blue); border: none; font-size: 25px; font-weight: bold; cursor: pointer; border-radius: 10px; }
+        .click-bar-container { width: 300px; height: 20px; background: #333; margin: 10px; border-radius: 10px; overflow: hidden; }
+        .click-bar { height: 100%; background: lime; width: 0%; transition: width 0.1s; }
 
-        #dice-area { margin-top: 30px; text-align: center; }
-        #dice-btn { font-size: 50px; background: none; border: 2px solid white; color: white; border-radius: 10px; width: 100px; height: 100px; cursor: pointer; transition: 0.2s; }
-        #dice-btn:hover { background: white; color: black; }
-        #dice-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        #board-msg { font-size: 24px; color: var(--neon-gold); margin-bottom: 10px; }
+        /* MATH */
+        #math-q { font-size: 60px; color: var(--neon-gold); margin-bottom: 20px; }
+        .math-opt { padding: 15px; font-size: 20px; width: 80px; margin: 5px; cursor: pointer; background: #333; border: 1px solid #555; color: white; }
 
-        /* VOTAÇÃO MODAL */
-        #voting-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(10, 10, 10, 0.98); z-index: 999; flex-direction: column; justify-content: center; align-items: center; }
-        .vote-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 800px; width: 95%; max-height: 60vh; overflow-y: auto; padding: 10px; }
-        .vote-btn { background: #222; border: 2px solid #555; color: white; padding: 15px; font-size: 16px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-family: 'Rajdhani', sans-serif; text-transform: uppercase; width: 100%; }
-        .vote-btn:hover { background: var(--neon-blue); border-color: white; }
-
-        /* UI GERAL */
-        #btn-admin-toggle { position: absolute; top: 20px; left: 20px; background: none; border: none; font-size: 24px; cursor: pointer; color: #333; z-index: 300; }
-        .online-badge { position: absolute; top: 20px; right: 20px; background: #111; border: 1px solid #333; padding: 5px 15px; border-radius: 20px; color: var(--neon-green); font-size: 14px; display: flex; align-items: center; gap: 5px; }
-        .online-dot { width: 8px; height: 8px; background: var(--neon-green); border-radius: 50%; box-shadow: 0 0 5px var(--neon-green); }
-
-        #admin-panel { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 400; flex-direction: column; justify-content: center; align-items: center; }
-        .admin-card { background: #1a1a1a; padding: 20px; border: 1px solid var(--neon-blue); border-radius: 10px; width: 300px; text-align: left; }
-        .admin-row { margin-bottom: 10px; }
-        .admin-row input, .admin-row select { width: 100%; padding: 5px; background: #000; border: 1px solid #444; color: white; box-sizing: border-box; }
-        .btn-admin { padding: 10px; width: 100%; cursor: pointer; font-weight: bold; margin-top:5px; border:none; }
-
-        #main-menu { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 200; transition: opacity 0.5s; }
-        .logo-title { font-size: 60px; background: linear-gradient(to right, var(--neon-green), var(--neon-blue)); -webkit-background-clip: text; color: transparent; margin-bottom: 10px; text-align: center; }
-        .menu-card { background: rgba(20, 20, 20, 0.9); padding: 30px; border-radius: 15px; border: 1px solid #333; width: 90%; max-width: 400px; text-align: center; }
-        .btn-large { padding: 15px; width: 100%; font-size: 20px; font-weight: bold; background: var(--neon-green); color: black; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
-        input[type="text"], select { padding: 15px; background: #000; border: 1px solid #444; color: white; font-family: 'Rajdhani', sans-serif; font-size: 18px; text-align: center; border-radius: 8px; outline: none; width: 100%; margin-bottom: 10px; box-sizing: border-box; }
-        .hall-fama-container { margin-top: 20px; border-top: 1px solid #333; padding-top: 10px; }
-        .rank-item { display: flex; justify-content: space-between; border-bottom: 1px dashed #333; padding: 5px; color: var(--neon-gold); }
-
+        /* --- RESTO DO CSS PADRAO --- */
+        #betting-modal, #voting-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 1000; flex-direction: column; justify-content: center; align-items: center; }
+        .vote-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 800px; padding: 10px; }
+        .vote-btn, .bet-btn { background: #222; border: 2px solid #555; color: white; padding: 15px; cursor: pointer; text-transform: uppercase; }
+        .bet-btn.selected { background: var(--neon-green); color: black; }
+        
         #game-interface { display: none; width: 100%; height: 100%; flex-direction: column; }
-        #header { height: 60px; background: #111; border-bottom: 2px solid #333; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
+        #header { height: 50px; background: #111; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
         #main-container { display: flex; flex: 1; overflow: hidden; }
-        #sidebar { width: 250px; background: #0a0a0a; border-right: 1px solid #222; overflow-y: auto; padding: 10px; }
+        #sidebar { width: 250px; background: #0a0a0a; overflow-y: auto; padding: 10px; }
         #game-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         #rooms-grid { display: grid; gap: 10px; padding: 20px; max-width: 800px; width: 100%; max-height: 80vh; overflow-y: auto; }
-
-        .room-btn { aspect-ratio: 1; background: #1e1e1e; border: 1px solid #333; border-radius: 8px; color: #555; cursor: pointer; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.1s; }
-        .room-btn:hover { background: #2a2a2a; border-color: #777; }
-        .room-btn.taken { cursor: not-allowed; border-color: #444; background: #111; }
-        .room-btn.gas { background: #2e1e05 !important; border-color: #d35400 !important; }
-        .room-btn.life { background: #052e05 !important; border-color: #27ae60 !important; }
-        .room-btn.escudo { background: #002233 !important; border-color: #00b0ff !important; }
-        .room-btn.exploded { background: #500 !important; border-color: red !important; animation: shake 0.5s; }
-        .room-content { font-size: 30px; }
-        .room-number { position: absolute; top: 5px; left: 8px; font-weight: bold; color: rgba(255,255,255,0.3); font-size: 14px; }
-        .occupant-name { font-size: 12px; margin-top: 5px; color: #aaa; font-weight: bold; max-width: 90%; overflow: hidden; white-space: nowrap; }
-
-        .player-item { background: #151515; padding: 8px; margin-bottom: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid transparent; }
-        .player-item.p1 { border-left-color: var(--neon-green); } .player-item.p2 { border-left-color: var(--neon-blue); }
-        .player-item.p3 { border-left-color: #d500f9; } .player-item.p4 { border-left-color: var(--neon-gold); }
-        .player-item.turn { background: #222; border-right: 3px solid var(--neon-gold); }
-        .player-item.dead { text-decoration: line-through; opacity: 0.4; }
-
-        #message-box { font-size: 24px; font-weight: bold; margin-bottom: 10px; height: 35px; text-shadow: 0 2px 10px black; }
-        #timer-txt { font-size: 24px; color: var(--neon-gold); font-family: monospace; font-weight: bold; }
+        .room-btn { aspect-ratio: 1; background: #1e1e1e; border: 1px solid #333; border-radius: 8px; color: #555; cursor: pointer; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .room-btn.gas { background: #2e1e05; border-color: #d35400; }
+        .room-btn.life { background: #052e05; border-color: #27ae60; }
+        .room-btn.escudo { background: #002233; border-color: #00b0ff; }
+        .player-item { background: #151515; padding: 5px; margin-bottom: 2px; border-radius: 3px; display: flex; justify-content: space-between; font-size: 12px; }
+        .player-item.dead { text-decoration: line-through; opacity: 0.5; }
         #victory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
-        
-        @keyframes shake { 0% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} 100% {transform: translateX(0);} }
-        @media (max-width: 600px) { 
-            #main-container { flex-direction: column-reverse; } 
-            #sidebar { width: 100%; height: 150px; } 
-            #rooms-grid { grid-template-columns: repeat(4, 1fr) !important; padding: 5px; } 
-            .logo-title { font-size: 40px; }
-            .vote-grid { grid-template-columns: repeat(2, 1fr); }
-        }
+        #main-menu { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #050505; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
     </style>
 </head>
 <body>
 
-    <button id="btn-admin-toggle" onclick="abrirAdmin()">⚙️</button>
-    <div class="online-badge"><div class="online-dot"></div><span id="online-count">1</span> ONLINE</div>
-
-    <div id="betting-modal">
-        <div class="bet-title">QUEM VAI VENCER?</div>
-        <div class="bet-container">
-            <div class="bet-btn" id="bet-p1" onclick="apostar(1)">
-                <span id="name-p1">Player 1</span>
-            </div>
-            <div style="font-size:30px; color:white; align-self:center;">VS</div>
-            <div class="bet-btn" id="bet-p2" onclick="apostar(2)">
-                <span id="name-p2">Player 2</span>
-            </div>
-        </div>
-        <div style="margin-top:20px; color:var(--neon-red); font-size:14px;">SE APOSTAR ERRADO E NÃO TIVER ESCUDO, VOCÊ MORRE!</div>
-        <div style="margin-top:10px; color:#aaa; font-size:12px;">(Espectadores também morrem)</div>
+    <div id="mg-board" class="minigame-overlay">
+        <div class="mg-title">🎲 TABULEIRO</div>
+        <div class="mg-vs" id="board-vs"></div>
+        <div id="board-track" style="display:flex; flex-wrap:wrap; width:300px;"></div>
+        <button id="dice-btn" onclick="socket.emit('pedirDado')" style="font-size:30px; margin-top:20px;">🎲</button>
+        <div id="board-msg" style="color:gold; height:20px;"></div>
     </div>
 
-    <div id="board-overlay">
-        <h2 style="color:var(--neon-gold); margin:0;">CORRIDA MORTAL</h2>
-        <div id="board-msg">VS</div>
-        <div class="board-track" id="board-track"></div>
-        <div id="dice-area">
-            <button id="dice-btn" onclick="rolarDado()">🎲</button>
-            <div style="margin-top:10px; color:#aaa;">JOGAR DADO</div>
+    <div id="mg-memory" class="minigame-overlay">
+        <div class="mg-title">🧠 MEMÓRIA</div>
+        <div class="mg-vs" id="mem-status">OBSERVE...</div>
+        <div class="mem-grid">
+            <div class="mem-btn" style="background:red" id="memb-0" onclick="sendMem(0)"></div>
+            <div class="mem-btn" style="background:blue" id="memb-1" onclick="sendMem(1)"></div>
+            <div class="mem-btn" style="background:green" id="memb-2" onclick="sendMem(2)"></div>
+            <div class="mem-btn" style="background:yellow" id="memb-3" onclick="sendMem(3)"></div>
         </div>
+    </div>
+
+    <div id="mg-reflex" class="minigame-overlay">
+        <div class="mg-title">⚡ REFLEXO</div>
+        <button id="reflex-btn" onmousedown="socket.emit('cliqueReflex')">ESPERE...</button>
+        <div style="margin-top:20px;">CLIQUE NO VERDE!</div>
+    </div>
+
+    <div id="mg-clicker" class="minigame-overlay">
+        <div class="mg-title">👆 ESMAGA BOTÃO</div>
+        <button id="clicker-btn" onmousedown="socket.emit('clickerHit')">CLICK!</button>
+        <div id="clicker-bars" style="margin-top:20px;"></div>
+    </div>
+
+    <div id="mg-math" class="minigame-overlay">
+        <div class="mg-title">🧮 MATEMÁTICA</div>
+        <div id="math-q">? + ?</div>
+        <div id="math-opts" style="display:flex;"></div>
     </div>
 
     <div id="voting-modal">
-        <div style="font-size:30px; color:var(--neon-blue); margin-bottom:10px;">QUEM VAI PRO PAREDÃO?</div>
+        <h2 style="color:cyan">QUEM VAI PRO PAREDÃO?</h2>
         <div class="vote-grid" id="vote-list"></div>
-        <div style="margin-top:10px; color:#aaa;" id="vote-status">Aguardando votos...</div>
     </div>
 
-    <div id="admin-panel">
-        <div class="admin-card">
-            <h2 style="color:var(--neon-blue); margin-top:0;">ADMIN</h2>
-            <div id="admin-login-area">
-                <div class="admin-row"><label>Senha:</label><input type="password" id="admin-pass"></div>
-                <button class="btn-admin" style="background:var(--neon-blue)" onclick="tentarLoginAdmin()">ENTRAR</button>
-                <button class="btn-admin" style="background:#333; color:white" onclick="fecharAdmin()">CANCELAR</button>
-            </div>
-            <div id="admin-controls" style="display:none;">
-                <div class="admin-row"><label>Jogadores Max:</label><input type="number" id="conf-max" value="20"></div>
-                <div class="admin-row"><label>Vidas:</label><input type="number" id="conf-vidas" value="2"></div>
-                <div class="admin-row"><label>Bot Speed (ms):</label><input type="number" id="conf-speed" value="500"></div>
-                <div class="admin-row"><label>Mult. Portas:</label><input type="number" id="conf-portas" value="1.2" step="0.1"></div>
-                <button class="btn-admin" style="background:var(--neon-green)" onclick="salvarConfig()">SALVAR</button>
-                <button class="btn-admin" style="background:var(--neon-red); color:white" onclick="zerarRank()">ZERAR RANK</button>
-                <button class="btn-admin" style="background:#333; color:white" onclick="fecharAdmin()">FECHAR</button>
-            </div>
+    <div id="betting-modal">
+        <h2 style="color:gold">APOSTE NO VENCEDOR</h2>
+        <div style="display:flex; gap:20px;">
+            <div class="bet-btn" id="bet-p1" onclick="apostar(1)">P1</div>
+            <div class="bet-btn" id="bet-p2" onclick="apostar(2)">P2</div>
         </div>
     </div>
 
     <div id="main-menu">
-        <div class="logo-title">SURVIVAL<br>ROYALE</div>
-        <div class="menu-card" id="login-step">
-            <h3 style="margin:0 0 20px 0; color:#aaa;">LOGIN</h3>
-            <input type="text" id="my-name" placeholder="NICKNAME" maxlength="12">
-            <select id="my-color"><option value="p1">Verde</option><option value="p2">Azul</option><option value="p3">Roxo</option><option value="p4">Amarelo</option></select>
-            <button class="btn-large" onclick="entrarNoLobby()">JOGAR</button>
-            <div class="hall-fama-container">
-                <div style="color:var(--neon-gold); letter-spacing:2px; margin-bottom:5px;">🏆 HALL DA FAMA 🏆</div>
-                <div class="rank-list" id="rank-list-ui" style="text-align:center;">...</div>
-            </div>
-        </div>
-        <div class="menu-card" id="lobby-step" style="display:none;">
-            <h3 style="color:white;">LOBBY</h3>
-            <div style="color:#777; margin-bottom:10px;">Aguardando...</div>
-            <div id="lobby-list" style="background:#000; padding:10px; border-radius:5px; height:100px; overflow-y:auto; margin-bottom:15px; text-align:left;"></div>
-            <button id="btn-start" class="btn-large" style="background:var(--neon-gold); display:none;" onclick="iniciarJogo()">INICIAR</button>
-            <div style="color:#555; font-size:12px; margin-top:10px;" id="lobby-msg">Só o host inicia</div>
-        </div>
+        <h1 style="color:lime; font-size:50px;">SURVIVAL 5-GAMES</h1>
+        <input id="my-name" placeholder="Nome" style="padding:10px; font-size:20px;">
+        <button onclick="entrar()" style="padding:10px; font-size:20px; margin-top:10px;">JOGAR</button>
     </div>
 
     <div id="game-interface">
         <div id="header">
-            <button onclick="location.reload()" style="background:#333; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">SAIR</button>
-            <div id="timer-txt">--</div>
-            <div style="font-weight:bold; font-size:14px;">VIVOS: <span id="alive-txt" style="color:white;">20</span></div>
+            <button onclick="location.reload()">SAIR</button>
+            <div style="color:white">VIVOS: <span id="alive-txt">0</span></div>
         </div>
         <div id="main-container">
-            <div id="sidebar"><div id="game-players-list"></div></div>
-            <div id="game-area"><div id="message-box"></div><div id="rooms-grid"></div></div>
+            <div id="sidebar"><div id="players-list"></div></div>
+            <div id="game-area"><div id="message-box" style="font-size:30px; font-weight:bold; height:40px;"></div><div id="rooms-grid"></div></div>
         </div>
     </div>
 
     <div id="victory-screen">
-        <h1 style="color:var(--neon-gold); font-size:50px;">VENCEDOR</h1>
-        <h2 id="winner-name" style="color:white;">-</h2>
-        <button class="btn-large" style="width:200px; margin-top:20px;" onclick="location.reload()">VOLTAR</button>
+        <h1 style="color:gold">VENCEDOR</h1>
+        <h2 id="win-name" style="color:white"></h2>
+        <button onclick="location.reload()">VOLTAR</button>
     </div>
 
     <script>
         const socket = io();
-        let meuId=null, minhaVez=false; timerVisual=null; let apostaP1Id=null, apostaP2Id=null;
-
+        let meuId = null, canClickMem = false, apostaIds={};
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playTone(f,t,d){if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type=t;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.01,audioCtx.currentTime+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d);}
-        const SFX={click:()=>playTone(600,'sine',0.1),gas:()=>playTone(150,'sawtooth',0.4),life:()=>playTone(800,'triangle',0.2),key:()=>playTone(1200,'sine',0.5),explode:()=>playTone(60,'square',0.8),win:()=>playTone(600,'sine',0.6),dice:()=>playTone(400,'triangle',0.1)};
-
-        function abrirAdmin(){document.getElementById('admin-panel').style.display='flex';}
-        function fecharAdmin(){document.getElementById('admin-panel').style.display='none';}
-        function tentarLoginAdmin(){socket.emit('adminLogin',document.getElementById('admin-pass').value);}
-        socket.on('adminLogado',(ok)=>{if(ok){document.getElementById('admin-login-area').style.display='none';document.getElementById('admin-controls').style.display='block';}else alert("Senha errada");});
-        socket.on('configAtual',(c)=>{document.getElementById('conf-max').value=c.maxJogadores;document.getElementById('conf-vidas').value=c.vidasIniciais;document.getElementById('conf-speed').value=c.velocidadeBot;document.getElementById('conf-portas').value=c.fatorPortas;});
-        function salvarConfig(){socket.emit('adminSalvarConfig',{maxJogadores:document.getElementById('conf-max').value,vidasIniciais:document.getElementById('conf-vidas').value,velocidadeBot:document.getElementById('conf-speed').value,fatorPortas:document.getElementById('conf-portas').value});fecharAdmin();}
-        function zerarRank(){if(confirm("Zerar?"))socket.emit('adminZerarRank');}
-
-        socket.on('connect',()=>{meuId=socket.id;});
-        socket.on('jogadoresOnline',(n)=>document.getElementById('online-count').innerText=n);
-        socket.on('atualizarRanking',(l)=>{document.getElementById('rank-list-ui').innerHTML=l.length?l.map(r=>`<div class="rank-item"><span>🏆 ${r.nome}</span><span style="color:#555;font-size:10px">${r.data}</span></div>`).join(''):"Vazio";});
-
-        function entrarNoLobby(){
-            if(!document.getElementById('my-name').value)return alert("Nome?");
-            socket.emit('entrar',{nome:document.getElementById('my-name').value,tipo:document.getElementById('my-color').value});
-            document.getElementById('login-step').style.display='none';document.getElementById('lobby-step').style.display='block';
-            SFX.click();
-        }
-        function iniciarJogo(){socket.emit('iniciarJogo');}
-
-        // --- VOTAÇÃO ---
-        socket.on('abrirVotacao', (candidatos) => {
-            const modal = document.getElementById('voting-modal');
-            const lista = document.getElementById('vote-list');
-            modal.style.display = 'flex';
-            lista.innerHTML = '';
-            candidatos.forEach(c => {
-                let b = document.createElement('button');
-                b.className = 'vote-btn';
-                b.innerHTML = `${c.nome} ${c.id===meuId?'(VOCÊ)':''}`;
-                b.onclick = () => {
-                    socket.emit('enviarVoto', c.id);
-                    document.getElementById('vote-status').innerText = "Voto enviado!";
-                    document.querySelectorAll('.vote-btn').forEach(bb=>bb.disabled=true);
-                    SFX.click();
-                };
-                lista.appendChild(b);
-            });
-        });
-        socket.on('progressoVotacao', (d) => { document.getElementById('vote-status').innerText = `Computando: ${d.atual}/${d.total}`; });
-        socket.on('fecharVotacao', () => { document.getElementById('voting-modal').style.display = 'none'; });
-
-        // --- APOSTAS (NOVO) ---
-        socket.on('abrirApostasUI', (d) => {
-            apostaP1Id = d.p1.id; apostaP2Id = d.p2.id;
-            document.getElementById('betting-modal').style.display = 'flex';
-            document.getElementById('name-p1').innerText = d.p1.nome;
-            document.getElementById('name-p2').innerText = d.p2.nome;
-            
-            // Remove selecao anterior
-            document.getElementById('bet-p1').classList.remove('selected');
-            document.getElementById('bet-p2').classList.remove('selected');
-            
-            // Se eu sou um dos lutadores, não deveria apostar (mas o server ignora meu voto então ok)
-        });
-
-        function apostar(qual) {
-            let idEscolhido = (qual === 1) ? apostaP1Id : apostaP2Id;
-            socket.emit('fazerAposta', idEscolhido);
-            
-            document.getElementById('bet-p1').classList.remove('selected');
-            document.getElementById('bet-p2').classList.remove('selected');
-            document.getElementById(`bet-p${qual}`).classList.add('selected');
-            SFX.click();
+        
+        socket.on('connect', ()=>meuId=socket.id);
+        
+        function entrar(){
+            let n = document.getElementById('my-name').value;
+            if(!n) return;
+            socket.emit('entrar', {nome:n, tipo:'p1'});
+            document.getElementById('main-menu').style.display='none';
+            document.getElementById('game-interface').style.display='flex';
+            // Se sou host (primeiro), inicio auto ou botao
+            setTimeout(()=>socket.emit('iniciarJogo'), 2000); 
         }
 
-        socket.on('fecharApostasUI', () => {
-            document.getElementById('betting-modal').style.display = 'none';
-        });
-
-        // --- BOARD GAME ---
-        let boardP1=null, boardP2=null;
-        socket.on('iniciarBoardUI', (d) => {
-            boardP1 = d.p1.id; boardP2 = d.p2.id;
-            document.getElementById('board-overlay').style.display = 'flex';
-            document.getElementById('board-msg').innerText = `${d.p1.nome} VS ${d.p2.nome}`;
+        // START GAMES
+        socket.on('iniciarMinigameUI', (d) => {
+            document.querySelectorAll('.minigame-overlay').forEach(e=>e.style.display='none');
             
-            const track = document.getElementById('board-track');
-            track.innerHTML = '';
-            for(let i=0; i<=d.tamanho; i++) {
-                let cell = document.createElement('div');
-                cell.className = 'board-cell';
-                if(i===13 || i===7) cell.classList.add('trap');
-                if(i===d.tamanho) cell.classList.add('finish');
-                cell.innerText = i;
-                
-                let tk1 = document.createElement('div'); tk1.className='p-token'; tk1.id=`bt-p1-${i}`; tk1.style.background='cyan'; tk1.style.left='2px'; tk1.style.display='none'; tk1.innerText='1';
-                let tk2 = document.createElement('div'); tk2.className='p-token'; tk2.id=`bt-p2-${i}`; tk2.style.background='magenta'; tk2.style.right='2px'; tk2.style.display='none'; tk2.innerText='2';
-                
-                cell.appendChild(tk1); cell.appendChild(tk2);
-                track.appendChild(cell);
+            if(d.type === 'BOARD') {
+                document.getElementById('mg-board').style.display='flex';
+                document.getElementById('board-vs').innerText = `${d.p1.nome} vs ${d.p2.nome}`;
+                let tk = document.getElementById('board-track'); tk.innerHTML='';
+                for(let i=0; i<=20; i++){
+                    let div=document.createElement('div'); div.className='board-cell'; div.innerText=i;
+                    div.id=`bc-${i}`; tk.appendChild(div);
+                }
             }
-            document.getElementById(`bt-p1-0`).style.display='flex';
-            document.getElementById(`bt-p2-0`).style.display='flex';
+            if(d.type === 'MEMORY') {
+                document.getElementById('mg-memory').style.display='flex';
+                canClickMem = false;
+            }
+            if(d.type === 'REFLEX') {
+                document.getElementById('mg-reflex').style.display='flex';
+                document.getElementById('reflex-btn').style.background='#500';
+                document.getElementById('reflex-btn').innerText="ESPERE...";
+            }
+            if(d.type === 'CLICKER') {
+                document.getElementById('mg-clicker').style.display='flex';
+                document.getElementById('clicker-bars').innerHTML = `
+                    <div style="color:white">${d.p1.nome}</div><div class="click-bar-container"><div class="click-bar" id="cb-${d.p1.id}"></div></div>
+                    <div style="color:white">${d.p2.nome}</div><div class="click-bar-container"><div class="click-bar" id="cb-${d.p2.id}"></div></div>
+                `;
+            }
+            if(d.type === 'MATH') {
+                document.getElementById('mg-math').style.display='flex';
+                document.getElementById('math-q').innerText = d.q + " = ?";
+                let opts = document.getElementById('math-opts'); opts.innerHTML='';
+                let res = eval(d.q);
+                let arr = [res, res+1, res-1, res+2].sort(()=>Math.random()-0.5);
+                arr.forEach(v => {
+                    let b = document.createElement('button'); b.className='math-opt'; b.innerText=v;
+                    b.onclick = () => socket.emit('mathResp', v);
+                    opts.appendChild(b);
+                });
+            }
         });
 
-        socket.on('vezBoard', (d) => {
-            let btn = document.getElementById('dice-btn');
-            if(d.id === meuId) {
-                btn.disabled = false; btn.innerText = "🎲";
-                document.getElementById('board-msg').innerText = "SUA VEZ!";
-            } else {
-                btn.disabled = true; btn.innerText = "⏳";
-                document.getElementById('board-msg').innerText = `VEZ DE ${d.nome}`;
-            }
+        socket.on('fimMinigameUI', () => document.querySelectorAll('.minigame-overlay').forEach(e=>e.style.display='none'));
+
+        // BOARD
+        socket.on('boardVez', (d) => { document.getElementById('board-msg').innerText = d.id===meuId ? "SUA VEZ!" : "VEZ DO OPONENTE"; });
+        socket.on('boardDado', (d) => {
+            playTone(400,'square',0.1);
+            document.querySelectorAll('.board-cell').forEach(e=>e.style.background='#222');
+            document.getElementById(`bc-${d.pos}`).style.background='gold';
         });
 
-        function rolarDado() { socket.emit('pedirDado'); SFX.click(); }
-
-        socket.on('dadoRolado', (d) => {
-            SFX.dice();
-            document.getElementById('dice-btn').innerText = d.dado;
-            let suffix = (d.id === boardP1) ? 'p1' : 'p2';
-            for(let i=0; i<=20; i++) {
-                let t = document.getElementById(`bt-${suffix}-${i}`);
-                if(t) t.style.display = 'none';
-            }
-            let novo = document.getElementById(`bt-${suffix}-${d.pos}`);
-            if(novo) novo.style.display = 'flex';
-            
-            if(d.msg) document.getElementById('board-msg').innerText += d.msg;
-        });
-
-        socket.on('atualizarLista',(jogadores)=>{
-            document.getElementById('lobby-list').innerHTML=jogadores.map(j=>`<div style="color:${j.id===meuId?'#00e676':'white'}">${j.nome}</div>`).join('');
-            if(jogadores.length>0&&jogadores[0].id===meuId){document.getElementById('btn-start').style.display='block';document.getElementById('lobby-msg').style.display='none';}
-            const gl=document.getElementById('game-players-list');gl.innerHTML='';
-            jogadores.forEach(p=>{
-                let d=document.createElement('div');d.className=`player-item ${p.tipo}`;d.id=`plist-${p.id}`;
-                if(!p.vivo)d.classList.add('dead');
-                let st = p.vivo ? "❤️".repeat(p.vidas) : "👁️ MORTO";
-                if(p.temEscudo) st = "🛡️ ESCUDO";
-                d.innerHTML=`<div>${p.nome}</div><div style="font-size:10px">${st}</div>`;
-                gl.appendChild(d);
+        // MEMORY
+        socket.on('memoryShow', (seq) => {
+            canClickMem=false; document.getElementById('mem-status').innerText="OBSERVE";
+            seq.forEach((c, i) => {
+                setTimeout(()=>{
+                    let b = document.getElementById(`memb-${c}`); b.classList.add('active'); playTone(500+c*100,'sine',0.1);
+                    setTimeout(()=>b.classList.remove('active'), 400);
+                }, 500 + i*800);
             });
-            document.getElementById('alive-txt').innerText=jogadores.filter(j=>j.vivo).length;
+            setTimeout(()=>{ canClickMem=true; document.getElementById('mem-status').innerText="SUA VEZ"; }, 500 + seq.length*800);
+        });
+        function sendMem(c){ if(canClickMem){ playTone(600,'sine',0.1); socket.emit('memoryInput', c); } }
+
+        // REFLEX
+        socket.on('reflexGo', () => {
+            let b = document.getElementById('reflex-btn');
+            b.style.background = '#0f0'; b.innerText = "CLIQUE!"; playTone(800,'square',0.2);
         });
 
-        socket.on('inicioDePartida',(d)=>{
-            document.getElementById('main-menu').style.display='none';document.getElementById('game-interface').style.display='flex';
-            renderizarGrid(d.salas);
-        });
-        socket.on('novaRodada',(d)=>{
-            document.getElementById('board-overlay').style.display = 'none'; 
-            renderizarGrid(d.salas);document.getElementById('message-box').innerText=`RODADA ${d.fase}`;
+        // CLICKER
+        socket.on('clickerUpdate', (d) => {
+            let bar = document.getElementById(`cb-${d.id}`);
+            if(bar) bar.style.width = (d.val * 5) + "%"; // 20 clicks = 100%
         });
 
-        socket.on('mudancaDeTurno',(d)=>{
-            minhaVez=(d.idJogador===meuId); clearInterval(timerVisual);
-            document.querySelectorAll('.player-item').forEach(e=>e.classList.remove('turn'));
-            if(document.getElementById(`plist-${d.idJogador}`))document.getElementById(`plist-${d.idJogador}`).classList.add('turn');
-            let t=d.tempo; document.getElementById('timer-txt').innerText=t;
-            let msg=document.getElementById('message-box');
-            if(minhaVez){msg.innerText="ESCOLHA UMA SALA";msg.style.color="var(--neon-green)";document.getElementById('timer-txt').style.color="var(--neon-green)";}
-            else{msg.innerText=`VEZ DE ${d.nome}`;msg.style.color="white";document.getElementById('timer-txt').style.color="var(--neon-gold)";}
-            timerVisual=setInterval(()=>{t--;document.getElementById('timer-txt').innerText=t;if(t<=0)clearInterval(timerVisual);},1000);
-        });
-
-        socket.on('salaOcupada',(d)=>{
-            clearInterval(timerVisual);document.getElementById('timer-txt').innerText="--";
-            let b=document.getElementById(`room-${d.idSala}`);
-            b.classList.add('taken');
-            let c='#555'; if(d.jogador.tipo==='p1')c='var(--neon-green)';if(d.jogador.tipo==='p2')c='var(--neon-blue)';if(d.jogador.tipo==='p3')c='#d500f9';if(d.jogador.tipo==='p4')c='var(--neon-gold)';
-            b.style.borderColor=c;
-            document.getElementById(`name-${d.idSala}`).innerText=d.jogador.nome;
-            let ic=document.getElementById(`icon-${d.idSala}`);
-            
-            if(d.efeito==='gas'){b.classList.add('gas');ic.innerText='☠️';SFX.gas();}
-            else if(d.efeito==='vida'){b.classList.add('life');ic.innerText='🟢';SFX.life();}
-            else if(d.efeito==='escudo'){b.classList.add('escudo');ic.innerText='🛡️';SFX.key();}
-            else{ic.innerText='😐';SFX.click();}
-        });
-
-        socket.on('mensagem',(d)=>{let b=document.getElementById('message-box');b.innerText=d.texto;b.style.color=d.cor;});
-        socket.on('efeitoExplosao',(d)=>{let b=document.getElementById(`room-${d.idSala}`);if(b){b.classList.add('exploded');document.getElementById(`icon-${d.idSala}`).innerText='💥';SFX.explode();}});
-        socket.on('efeitoDefesa',(d)=>{ let el = document.getElementById(`plist-${d.idVitima}`); if(el) { el.style.backgroundColor = "gold"; setTimeout(()=>el.style.backgroundColor="#151515", 500); } SFX.key(); });
-        socket.on('efeitoKill',(d)=>{ let el = document.getElementById(`plist-${d.idVitima}`); if(el) { el.style.backgroundColor = "red"; setTimeout(()=>el.style.backgroundColor="#151515", 500); } SFX.explode(); });
-        socket.on('fimDeJogo',(d)=>{
-            document.getElementById('board-overlay').style.display='none';
-            document.getElementById('victory-screen').style.display='flex';document.getElementById('winner-name').innerText=d.campeao.nome;SFX.win();
-        });
-
-        function renderizarGrid(salas){
-            const g=document.getElementById('rooms-grid');g.innerHTML='';
-            let cols=window.innerWidth<600?4:5; g.style.gridTemplateColumns=`repeat(${cols}, 1fr)`;
-            salas.forEach(s=>{
-                let b=document.createElement('button');b.className='room-btn';b.id=`room-${s.id}`;
-                b.onclick=()=>{if(minhaVez)socket.emit('jogarTurno',s.id);};
-                b.innerHTML=`<div class="room-number">${s.id}</div><div class="room-content" id="icon-${s.id}">🚪</div><div class="occupant-name" id="name-${s.id}"></div>`;
+        // VOTING
+        socket.on('abrirVotacao', (list) => {
+            document.getElementById('voting-modal').style.display='flex';
+            let g = document.getElementById('vote-list'); g.innerHTML='';
+            list.forEach(p => {
+                let b = document.createElement('button'); b.className='vote-btn'; b.innerText=p.nome;
+                b.onclick = () => { socket.emit('enviarVoto', p.id); document.getElementById('voting-modal').style.display='none'; };
                 g.appendChild(b);
+            });
+        });
+        socket.on('fecharVotacao', ()=>document.getElementById('voting-modal').style.display='none');
+
+        // BETTING
+        socket.on('abrirApostasUI', (d) => {
+            apostaIds = {1: d.p1.id, 2: d.p2.id};
+            document.getElementById('betting-modal').style.display='flex';
+            document.getElementById('bet-p1').innerText=d.p1.nome; document.getElementById('bet-p2').innerText=d.p2.nome;
+        });
+        function apostar(n){ socket.emit('fazerAposta', apostaIds[n]); document.getElementById('betting-modal').style.display='none'; }
+        socket.on('fecharApostasUI', ()=>document.getElementById('betting-modal').style.display='none');
+
+        // CORE
+        socket.on('atualizarLista', (list) => {
+            let d = document.getElementById('players-list'); d.innerHTML='';
+            list.forEach(p => {
+                let el = document.createElement('div'); el.className = `player-item ${p.vivo?'':'dead'}`;
+                el.innerText = `${p.nome} ${p.temEscudo?'🛡️':''} ${p.vivo?'❤️'+p.vidas:'💀'}`;
+                if(p.id===meuId) el.style.color='lime';
+                d.appendChild(el);
+            });
+            document.getElementById('alive-txt').innerText = list.filter(p=>p.vivo).length;
+        });
+
+        socket.on('inicioDePartida', (d) => renderRooms(d.salas));
+        socket.on('novaRodada', (d) => { renderRooms(d.salas); document.getElementById('message-box').innerText=`RODADA ${d.fase}`; });
+        socket.on('salaOcupada', (d) => {
+            let b = document.getElementById(`room-${d.idSala}`);
+            if(b){ b.style.background='#333'; b.innerText=d.efeito; }
+        });
+        socket.on('mensagem', (d) => { let m=document.getElementById('message-box'); m.innerText=d.texto; m.style.color=d.cor; });
+        socket.on('mudancaDeTurno', (d) => { if(d.idJogador===meuId) document.getElementById('message-box').innerText="SUA VEZ DE ESCOLHER SALA!"; });
+        socket.on('fimDeJogo', (d) => { document.getElementById('victory-screen').style.display='flex'; document.getElementById('win-name').innerText=d.campeao.nome; });
+
+        function renderRooms(salas){
+            let g = document.getElementById('rooms-grid'); g.innerHTML='';
+            let cols = window.innerWidth<600?4:5; g.style.gridTemplateColumns=`repeat(${cols}, 1fr)`;
+            salas.forEach(s => {
+                let b = document.createElement('button'); b.className='room-btn'; b.id=`room-${s.id}`;
+                b.onclick = () => socket.emit('jogarTurno', s.id);
+                b.innerText = s.id; g.appendChild(b);
             });
         }
     </script>
