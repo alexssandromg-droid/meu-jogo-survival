@@ -14,13 +14,11 @@
         }
         body { background-color: var(--bg-dark); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; height: 100vh; overflow: hidden; user-select: none; display: flex; flex-direction: column; }
 
-        /* UI GERAL */
         #btn-admin-toggle { position: absolute; top: 20px; left: 20px; background: none; border: none; font-size: 24px; cursor: pointer; color: #333; z-index: 300; transition:0.3s; }
         #btn-admin-toggle:hover { color: white; transform: rotate(90deg); }
         .online-badge { position: absolute; top: 20px; right: 20px; background: #111; border: 1px solid #333; padding: 5px 15px; border-radius: 20px; color: var(--neon-green); font-size: 14px; display: flex; align-items: center; gap: 5px; }
         .online-dot { width: 8px; height: 8px; background: var(--neon-green); border-radius: 50%; box-shadow: 0 0 5px var(--neon-green); }
 
-        /* ADMIN */
         #admin-panel { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 400; flex-direction: column; justify-content: center; align-items: center; }
         .admin-card { background: #1a1a1a; padding: 20px; border: 1px solid var(--neon-blue); border-radius: 10px; width: 300px; text-align: left; }
         .admin-row { margin-bottom: 10px; }
@@ -28,17 +26,14 @@
         .admin-row input, .admin-row select { width: 100%; padding: 5px; background: #000; border: 1px solid #444; color: white; box-sizing: border-box; }
         .btn-admin { padding: 10px; width: 100%; cursor: pointer; font-weight: bold; margin-top:5px; border:none; }
 
-        /* MENU */
         #main-menu { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 200; transition: opacity 0.5s; }
         .logo-title { font-size: 60px; background: linear-gradient(to right, var(--neon-green), var(--neon-blue)); -webkit-background-clip: text; color: transparent; text-shadow: 0 0 20px rgba(0, 230, 118, 0.5); margin-bottom: 10px; text-align: center; }
         .menu-card { background: rgba(20, 20, 20, 0.9); padding: 30px; border-radius: 15px; border: 1px solid #333; width: 90%; max-width: 400px; text-align: center; }
         .btn-large { padding: 15px; width: 100%; font-size: 20px; font-weight: bold; background: var(--neon-green); color: black; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
         input[type="text"], select { padding: 15px; background: #000; border: 1px solid #444; color: white; font-family: 'Rajdhani', sans-serif; font-size: 18px; text-align: center; border-radius: 8px; outline: none; width: 100%; margin-bottom: 10px; box-sizing: border-box; }
-        
         .hall-fama-container { margin-top: 20px; border-top: 1px solid #333; padding-top: 10px; }
         .rank-item { display: flex; justify-content: space-between; border-bottom: 1px dashed #333; padding: 5px; color: var(--neon-gold); }
 
-        /* JOGO */
         #game-interface { display: none; width: 100%; height: 100%; flex-direction: column; }
         #header { height: 60px; background: #111; border-bottom: 2px solid #333; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
         #main-container { display: flex; flex: 1; overflow: hidden; }
@@ -46,7 +41,6 @@
         #game-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         #rooms-grid { display: grid; gap: 10px; padding: 20px; max-width: 800px; width: 100%; max-height: 80vh; overflow-y: auto; }
 
-        /* SALAS */
         .room-btn { aspect-ratio: 1; background: #1e1e1e; border: 1px solid #333; border-radius: 8px; color: #555; cursor: pointer; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.1s; }
         .room-btn:hover { background: #2a2a2a; border-color: #777; }
         .room-btn.taken { cursor: not-allowed; border-color: #444; background: #111; }
@@ -62,7 +56,6 @@
         .room-number { position: absolute; top: 5px; left: 8px; font-weight: bold; color: rgba(255,255,255,0.3); font-size: 14px; }
         .occupant-name { font-size: 12px; margin-top: 5px; color: #aaa; font-weight: bold; max-width: 90%; overflow: hidden; white-space: nowrap; }
 
-        /* LISTA JOGADORES + BOTÃO KILL */
         .player-item { background: #151515; padding: 8px; margin-bottom: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid transparent; }
         .player-item.p1 { border-left-color: var(--neon-green); } .player-item.p2 { border-left-color: var(--neon-blue); }
         .player-item.p3 { border-left-color: var(--neon-purple); } .player-item.p4 { border-left-color: var(--neon-gold); }
@@ -179,11 +172,12 @@
         socket.on('seuPapel', (role) => {
             if(role === 'assassin') {
                 souAssassino = true;
-                alert("VOCÊ AGORA É O ASSASSINO! MATE 1 JOGADOR.");
+                alert("VOCÊ É O ASSASSINO! MATE 1 JOGADOR.");
             } else {
                 if(souAssassino) alert("VOCÊ PERDEU A FACA!");
                 souAssassino = false;
             }
+            if(minhaVez) socket.emit('pedirListaUpdate'); // Atualiza visual na hora
         });
 
         function matarJogador(idAlvo) {
@@ -239,7 +233,8 @@
             document.querySelectorAll('.player-item').forEach(e=>e.classList.remove('turn'));
             if(document.getElementById(`plist-${d.idJogador}`))document.getElementById(`plist-${d.idJogador}`).classList.add('turn');
             
-            if(souAssassino) socket.emit('pedirListaUpdate'); 
+            // CORREÇÃO CRÍTICA PARA O BOTÃO APARECER
+            if(minhaVez && souAssassino) socket.emit('pedirListaUpdate'); 
 
             let t=d.tempo; document.getElementById('timer-txt').innerText=t;
             let msg=document.getElementById('message-box');
