@@ -18,6 +18,9 @@ let turnoIndex = 0;
 let timerTurno = null;
 let faseAtual = 1;
 
+// RANKING (Memória do Servidor)
+let hallDaFama = []; // [{ nome: "Alex", vitorias: 1, data: "..." }]
+
 // === AUXILIARES ===
 function iniciarSalas(qtd) {
     let conteudos = ['chave'];
@@ -34,7 +37,6 @@ function iniciarSalas(qtd) {
 }
 
 function atualizarContadorOnline() {
-    // Conta quantos sockets estão conectados no total
     let total = io.engine.clientsCount;
     io.emit('jogadoresOnline', total);
 }
@@ -64,7 +66,8 @@ function processarProximoTurno() {
     });
 
     if(jogadorAtual.ehBot) {
-        timerTurno = setTimeout(() => { jogadaDoBot(jogadorAtual); }, 1500);
+        // === MUDANÇA: BOT AGORA É RÁPIDO (500ms) ===
+        timerTurno = setTimeout(() => { jogadaDoBot(jogadorAtual); }, 500);
     } else {
         timerTurno = setTimeout(() => {
             io.emit('mensagem', { texto: `${jogadorAtual.nome} DEMOROU!`, cor: "red" });
@@ -105,7 +108,8 @@ function resolverEntrada(idSala, idJogador) {
         io.emit('atualizarLista', Object.values(jogadores));
 
         turnoIndex++;
-        setTimeout(processarProximoTurno, 1000);
+        // Pausa curta para ver o efeito antes do próximo
+        setTimeout(processarProximoTurno, 800);
     }
 }
 
@@ -130,7 +134,17 @@ function faseExplosao() {
         if(vivos.length <= 1) {
             jogoAndando = false;
             let campeao = vivos[0] ? vivos[0] : { nome: "NINGUÉM", tipo: "bot" };
-            io.emit('fimDeJogo', campeao);
+            
+            // ADICIONAR AO RANKING
+            if(campeao.nome !== "NINGUÉM") {
+                hallDaFama.unshift({ // Adiciona no topo
+                    nome: campeao.nome,
+                    data: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})
+                });
+                if(hallDaFama.length > 5) hallDaFama.pop(); // Mantém só os top 5 recentes
+            }
+
+            io.emit('fimDeJogo', { campeao: campeao, ranking: hallDaFama });
         } else {
             iniciarNovaRodada(vivos);
         }
@@ -156,6 +170,8 @@ function iniciarNovaRodada(sobreviventes) {
 // === CONEXÃO SOCKET ===
 io.on('connection', (socket) => {
     atualizarContadorOnline();
+    // Envia o Ranking atual logo de cara
+    socket.emit('atualizarRanking', hallDaFama);
 
     socket.on('entrar', (dados) => {
         jogadores[socket.id] = {
