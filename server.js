@@ -26,12 +26,16 @@ let timerTurno = null;
 let faseAtual = 1;
 let hallDaFama = [];
 
-// Variáveis Votação/Duelo
+// Variáveis Votação
 let votosComputados = {}; 
 let jaVotaram = [];
-let dueloAtivo = false;
-let duelistas = []; // [player1, player2]
-let sinalVerde = false; // Controle do minigame
+
+// Variáveis Memória
+let memoryAtivo = false;
+let memoryPlayers = []; // [p1, p2]
+let memorySeq = [];
+let playerProgress = {}; // { id: indice_atual }
+let rodadaMemory = 1;
 
 // === AUXILIARES ===
 function iniciarSalas(qtdJogadores) {
@@ -62,16 +66,16 @@ function atualizarContadorOnline() {
 // === FLUXO DO JOGO ===
 
 function processarProximoTurno() {
-    if(!jogoAndando || dueloAtivo) return;
+    if(!jogoAndando || memoryAtivo) return;
     clearTimeout(timerTurno);
 
+    // Fim da rodada de escolhas -> Votação
     if(turnoIndex >= ordemTurno.length) {
-        // Fim da rodada -> Votação (se tiver gente suficiente)
         let vivos = Object.values(jogadores).filter(j => j.vivo);
         if(vivos.length > 1) {
-            iniciarFaseVotacao();
+            iniciarFaseVotacao(null);
         } else {
-            faseExplosao(null); // Só 1 vivo, acaba
+            faseExplosao(null); 
         }
         return;
     }
@@ -83,7 +87,9 @@ function processarProximoTurno() {
         return;
     }
 
-    io.emit('mudancaDeTurno', { idJogador: jogadorAtual.id, nome: jogadorAtual.nome, tempo: 10 });
+    io.emit('mudancaDeTurno', { 
+        idJogador: jogadorAtual.id, nome: jogadorAtual.nome, tempo: 10
+    });
 
     if(jogadorAtual.ehBot) {
         timerTurno = setTimeout(() => { jogadaDoBot(jogadorAtual); }, gameConfig.velocidadeBot);
@@ -131,15 +137,17 @@ function resolverEntrada(idSala, idJogador) {
 }
 
 // 2. FASE DE VOTAÇÃO
-function iniciarFaseVotacao() {
+function iniciarFaseVotacao(empatados) {
     votosComputados = {};
     jaVotaram = [];
     
     io.emit('mensagem', { texto: "🗳️ VOTAÇÃO INICIADA!", cor: "#00b0ff" });
-    let candidatos = Object.values(jogadores).filter(j => j.vivo);
+    let candidatos = empatados ? empatados : Object.values(jogadores).filter(j => j.vivo);
+    
+    if(candidatos.length === 0) { faseExplosao(null); return; }
+
     io.emit('abrirVotacao', candidatos);
 
-    // Bots votam
     Object.values(jogadores).filter(j => j.ehBot).forEach(bot => {
         setTimeout(() => {
             let alvo = candidatos[Math.floor(Math.random() * candidatos.length)];
@@ -150,7 +158,6 @@ function iniciarFaseVotacao() {
 
 function registrarVoto(idEleitor, idAlvo) {
     if(jaVotaram.includes(idEleitor)) return;
-    
     if(!votosComputados[idAlvo]) votosComputados[idAlvo] = 0;
     votosComputados[idAlvo]++;
     jaVotaram.push(idEleitor);
@@ -165,91 +172,131 @@ function registrarVoto(idEleitor, idAlvo) {
 
 function finalizarVotacao() {
     io.emit('fecharVotacao');
-
-    // Ordena por votos (Decrescente)
     let rankingVotos = Object.keys(votosComputados).sort((a,b) => votosComputados[b] - votosComputados[a]);
     
-    // Se ninguém recebeu voto (raro), aleatório morre? Não, segue jogo.
     if(rankingVotos.length === 0) {
-        io.emit('mensagem', { texto: "NINGUÉM VOTOU? QUE PAZ...", cor: "yellow" });
+        io.emit('mensagem', { texto: "NINGUÉM VOTOU...", cor: "yellow" });
         iniciarNovaRodada(Object.values(jogadores).filter(j=>j.vivo));
         return;
     }
 
-    // Pega os Top 2 (ou Top 1 se só tiver 1 votado)
     let id1 = rankingVotos[0];
     let id2 = rankingVotos[1];
 
-    if(!id2) {
-        // Só um foi votado (unanimidade), ele vai pro duelo sozinho? Não, morre direto.
-        faseExplosao(jogadores[id1]);
+    // Se tiver empate ou top 2, vai pro Memory Game
+    if(id2) {
+        // Verifica se houve empate real nos votos
+        if(votosComputados[id1] === votosComputados[id2]) {
+             iniciarMemoryGame(jogadores[id1], jogadores[id2]);
+             return;
+        }
+    }
+    
+    // Se não teve empate, o mais votado explode (ou joga memória contra o segundo para tentar se salvar? 
+    // Vamos fazer: Top 2 sempre duelam na memória pela vida)
+    if(id2) {
+        iniciarMemoryGame(jogadores[id1], jogadores[id2]);
     } else {
-        // TEMOS UM DUELO!
-        let p1 = jogadores[id1];
-        let p2 = jogadores[id2];
-        iniciarDuelo(p1, p2);
+        faseExplosao(jogadores[id1]);
     }
 }
 
-// 3. O DUELO (MINIGAME)
-function iniciarDuelo(p1, p2) {
-    if(!p1 || !p2) { faseExplosao(null); return; } // Segurança
+// 3. JOGO DA MEMÓRIA (SIMON SAYS)
+function iniciarMemoryGame(p1, p2) {
+    if(!p1 || !p2) { faseExplosao(null); return; }
 
-    dueloAtivo = true;
-    duelistas = [p1, p2];
-    sinalVerde = false;
+    memoryAtivo = true;
+    memoryPlayers = [p1, p2];
+    rodadaMemory = 3; // Começa com 3 cores
+    
+    io.emit('mensagem', { texto: `🧠 MEMÓRIA: ${p1.nome} VS ${p2.nome}`, cor: "#d500f9" });
+    io.emit('iniciarMemoryUI', { p1: p1, p2: p2 });
 
-    io.emit('mensagem', { texto: `⚔️ DUELO: ${p1.nome} VS ${p2.nome}`, cor: "#ff00ff" });
-    io.emit('iniciarDueloUI', { p1: p1, p2: p2 });
-
-    // Preparar o tiro (Wait random time 2s - 6s)
-    let tempoEspera = Math.random() * 4000 + 2000;
-
-    setTimeout(() => {
-        if(!dueloAtivo) return; // Alguém já clicou antes
-        sinalVerde = true;
-        io.emit('sinalDuelo', 'ATIRAR!'); // Manda o verde
-
-        // Lógica dos Bots no Duelo
-        duelistas.forEach(d => {
-            if(d.ehBot && d.vivo) {
-                // Bot reage entre 300ms e 800ms
-                setTimeout(() => processarTiroDuelo(d.id), Math.random() * 500 + 300);
-            }
-        });
-
-    }, tempoEspera);
+    setTimeout(novaRodadaMemory, 3000);
 }
 
-function processarTiroDuelo(idAtirador) {
-    if(!dueloAtivo) return; // Já acabou
+function novaRodadaMemory() {
+    if(!memoryAtivo) return;
+    
+    // Gera sequencia
+    memorySeq = [];
+    for(let i=0; i<rodadaMemory; i++) {
+        memorySeq.push(Math.floor(Math.random() * 4)); // 0, 1, 2, 3 (Cores)
+    }
 
-    let atirador = duelistas.find(d => d.id === idAtirador);
-    if(!atirador) return;
+    // Reseta progresso
+    playerProgress = {};
+    memoryPlayers.forEach(p => playerProgress[p.id] = 0); // Índice que o player tem que acertar
 
-    if(!sinalVerde) {
-        // QUEIMOU LARGADA (Clicou no vermelho) -> MORRE
-        dueloAtivo = false;
-        io.emit('resultadoDuelo', { vencedor: null, perdedor: atirador, motivo: "QUEIMOU LARGADA!" });
-        setTimeout(() => faseExplosao(atirador), 2000);
+    io.emit('memoryShowSequence', memorySeq);
+
+    // Bots jogam
+    memoryPlayers.forEach(p => {
+        if(p.ehBot && p.vivo) {
+            jogarBotMemory(p);
+        }
+    });
+}
+
+function jogarBotMemory(bot) {
+    let delay = 2000 + (rodadaMemory * 500); // Espera mostrar a sequencia
+    
+    memorySeq.forEach((corCorreta, index) => {
+        setTimeout(() => {
+            if(!memoryAtivo) return;
+            // 10% de chance de errar por clique
+            let input = (Math.random() > 0.1) ? corCorreta : Math.floor(Math.random()*4);
+            validarInputMemory(bot.id, input);
+        }, delay + (index * 800));
+    });
+}
+
+function validarInputMemory(idJogador, corInput) {
+    if(!memoryAtivo) return;
+    
+    // Verifica se é um dos duelistas
+    if(!memoryPlayers.find(p => p.id === idJogador)) return;
+
+    let indiceAtual = playerProgress[idJogador];
+    let corCorreta = memorySeq[indiceAtual];
+
+    if(corInput === corCorreta) {
+        // Acertou esse passo
+        playerProgress[idJogador]++;
+        
+        // Completou a sequência toda?
+        if(playerProgress[idJogador] >= memorySeq.length) {
+            // Verifica se o outro também completou ou se ainda está jogando
+            let oponente = memoryPlayers.find(p => p.id !== idJogador);
+            
+            // Se ambos completaram (simultaneo), aumenta nível
+            if(playerProgress[oponente.id] >= memorySeq.length) {
+                rodadaMemory++;
+                io.emit('mensagem', { texto: "AMBOS ACERTARAM! NÍVEL SUBIU!", cor: "cyan" });
+                setTimeout(novaRodadaMemory, 2000);
+            }
+        }
     } else {
-        // CLICOU CERTO (Primeiro no verde) -> VENCE
-        dueloAtivo = false;
-        let perdedor = duelistas.find(d => d.id !== idAtirador);
-        io.emit('resultadoDuelo', { vencedor: atirador, perdedor: perdedor, motivo: "TIRO CERTEIRO!" });
+        // ERROU! PERDEU!
+        let perdedor = jogadores[idJogador];
+        let vencedor = memoryPlayers.find(p => p.id !== idJogador);
+        
+        memoryAtivo = false;
+        io.emit('memoryResultado', { vencedor: vencedor, perdedor: perdedor });
+        io.emit('mensagem', { texto: `❌ ${perdedor.nome} ERROU A SEQUÊNCIA!`, cor: "red" });
+        
         setTimeout(() => faseExplosao(perdedor), 2000);
     }
 }
 
-
 // 4. ELIMINAÇÃO FINAL
 function faseExplosao(eliminado) {
-    dueloAtivo = false;
+    memoryAtivo = false;
 
     if(eliminado) {
         if(eliminado.temEscudo) {
             eliminado.temEscudo = false;
-            io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} SOBREVIVEU COM ESCUDO!`, cor: "#ffd700" });
+            io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} TINHA ESCUDO E SOBREVIVEU!`, cor: "#ffd700" });
             io.emit('efeitoDefesa', { idVitima: eliminado.id });
         } else {
             eliminado.vivo = false;
@@ -351,9 +398,9 @@ io.on('connection', (socket) => {
         if(jogadores[socket.id]) registrarVoto(socket.id, idAlvo);
     });
 
-    // AÇÃO DO DUELO
-    socket.on('cliqueDuelo', () => {
-        if(dueloAtivo) processarTiroDuelo(socket.id);
+    // INPUT DO JOGO DA MEMÓRIA
+    socket.on('memoryInput', (corIndex) => {
+        if(memoryAtivo) validarInputMemory(socket.id, corIndex);
     });
 
     socket.on('disconnect', () => {
@@ -366,4 +413,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR DUELO: ${PORT}`); });
+server.listen(PORT, () => { console.log(`SERVIDOR MEMORY: ${PORT}`); });
