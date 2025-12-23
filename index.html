@@ -26,7 +26,7 @@
             flex-direction: column;
         }
 
-        /* --- UI COMPONENTES --- */
+        /* --- UI ADMIN --- */
         #btn-admin-toggle {
             position: absolute; top: 20px; left: 20px;
             background: none; border: none; font-size: 24px; cursor: pointer;
@@ -36,26 +36,21 @@
 
         #admin-panel {
             display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); z-index: 400; overflow-y: auto;
-            flex-direction: column; justify-content: center; align-items: center;
+            background: rgba(0,0,0,0.95); z-index: 400; flex-direction: column; justify-content: center; align-items: center;
         }
         .admin-card {
             background: #1a1a1a; padding: 20px; border: 1px solid var(--neon-blue);
-            border-radius: 10px; width: 320px; text-align: left; margin: 20px 0;
+            border-radius: 10px; width: 300px; text-align: left;
         }
         .admin-row { margin-bottom: 15px; }
         .admin-row label { display: block; color: #aaa; font-size: 14px; margin-bottom: 5px; }
-        .admin-row input, .admin-row select { 
-            width: 100%; padding: 8px; background: #000; border: 1px solid #444; color: white; box-sizing: border-box; 
-        }
+        .admin-row input, .admin-row select { width: 100%; padding: 8px; background: #000; border: 1px solid #444; color: white; box-sizing: border-box; }
         .btn-admin-save { background: var(--neon-blue); color: black; border: none; padding: 10px; width: 100%; cursor: pointer; font-weight: bold; margin-bottom: 10px; }
-        .btn-admin-close { background: #333; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; margin-top: 10px; }
+        .btn-admin-close { background: #333; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; }
 
         .online-badge {
-            position: absolute; top: 20px; right: 20px;
-            background: #111; border: 1px solid #333;
-            padding: 5px 15px; border-radius: 20px;
-            color: var(--neon-green); font-size: 14px; display: flex; align-items: center; gap: 5px;
+            position: absolute; top: 20px; right: 20px; background: #111; border: 1px solid #333;
+            padding: 5px 15px; border-radius: 20px; color: var(--neon-green); font-size: 14px; display: flex; align-items: center; gap: 5px;
         }
         .online-dot { width: 8px; height: 8px; background: var(--neon-green); border-radius: 50%; box-shadow: 0 0 5px var(--neon-green); }
 
@@ -69,20 +64,17 @@
         .logo-title {
             font-size: 60px; color: transparent;
             background: linear-gradient(to right, var(--neon-green), var(--neon-blue));
-            -webkit-background-clip: text;
-            text-shadow: 0 0 20px rgba(0, 230, 118, 0.5);
+            -webkit-background-clip: text; text-shadow: 0 0 20px rgba(0, 230, 118, 0.5);
             margin-bottom: 10px; text-transform: uppercase; letter-spacing: 5px; text-align: center;
         }
         .menu-card {
-            background: rgba(20, 20, 20, 0.9);
-            padding: 30px; border-radius: 15px; border: 1px solid #333;
-            box-shadow: 0 0 30px rgba(0,0,0,0.8); text-align: center; width: 90%; max-width: 400px;
+            background: rgba(20, 20, 20, 0.9); padding: 30px; border-radius: 15px;
+            border: 1px solid #333; box-shadow: 0 0 30px rgba(0,0,0,0.8); text-align: center; width: 90%; max-width: 400px;
         }
         
         .hall-fama-container { margin-top: 20px; border-top: 1px solid #333; padding-top: 15px; width: 100%; }
         .rank-list { text-align: left; font-size: 14px; color: #ccc; max-height: 100px; overflow-y: auto; }
         .rank-item { padding: 5px 0; border-bottom: 1px dashed #333; display: flex; justify-content: space-between; }
-        .rank-item span { color: var(--neon-gold); }
 
         .btn-large {
             padding: 15px; width: 100%; font-size: 20px; font-weight: bold;
@@ -133,7 +125,6 @@
         #timer-txt { font-size: 24px; color: var(--neon-gold); font-family: monospace; font-weight: bold; }
 
         #victory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
-        
         @keyframes shake { 0% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} 100% {transform: translateX(0);} }
         @media (max-width: 600px) {
             #main-container { flex-direction: column-reverse; }
@@ -150,37 +141,18 @@
 
     <div id="admin-panel">
         <div class="admin-card">
-            <h2 style="color:var(--neon-blue); margin-top:0;">ADMINISTRADOR</h2>
+            <h2 style="color:var(--neon-blue); margin-top:0;">PAINEL ADMIN</h2>
             <div id="admin-login-area">
                 <div class="admin-row"><label>Senha:</label><input type="password" id="admin-pass"></div>
                 <button class="btn-admin-save" onclick="tentarLoginAdmin()">ACESSAR</button>
                 <button class="btn-admin-close" onclick="fecharAdmin()">CANCELAR</button>
             </div>
             <div id="admin-controls" style="display:none;">
-                <div class="admin-row">
-                    <label>Máximo Jogadores (Bots):</label><input type="number" id="conf-max" value="20">
-                </div>
-                <div class="admin-row">
-                    <label>Vidas Iniciais:</label><input type="number" id="conf-vidas" value="2">
-                </div>
-                <div class="admin-row">
-                    <label>Chance de Chave (0.1 = 10%):</label><input type="number" id="conf-chave" step="0.1" value="0.2">
-                </div>
-                <div class="admin-row">
-                    <label>Chance de Gás (0.4 = 40%):</label><input type="number" id="conf-gas" step="0.1" value="0.4">
-                </div>
-                <div class="admin-row">
-                    <label>Multiplicador Portas:</label><input type="number" id="conf-portas" step="0.1" value="1.2">
-                </div>
-                <div class="admin-row">
-                    <label>Velocidade Bot (ms):</label>
-                    <select id="conf-speed">
-                        <option value="1000">Lento (1s)</option>
-                        <option value="500">Normal (0.5s)</option>
-                        <option value="100">Flash (0.1s)</option>
-                    </select>
-                </div>
-                <button class="btn-admin-save" onclick="salvarConfig()">💾 SALVAR E REINICIAR</button>
+                <div class="admin-row"><label>Máximo Jogadores:</label><input type="number" id="conf-max" value="20"></div>
+                <div class="admin-row"><label>Vidas Iniciais:</label><input type="number" id="conf-vidas" value="2"></div>
+                <div class="admin-row"><label>Velocidade Bot (ms):</label><input type="number" id="conf-speed" value="500"></div>
+                <div class="admin-row"><label>Multiplicador Portas:</label><input type="number" id="conf-portas" value="1.0" step="0.1"></div>
+                <button class="btn-admin-save" onclick="salvarConfig()">💾 SALVAR REGRAS</button>
                 <button class="btn-admin-close" style="background:#d32f2f" onclick="zerarRank()">🗑️ ZERAR RANK</button>
                 <button class="btn-admin-close" onclick="fecharAdmin()">FECHAR</button>
             </div>
@@ -253,17 +225,13 @@
             document.getElementById('conf-vidas').value = c.vidasIniciais;
             document.getElementById('conf-speed').value = c.velocidadeBot;
             document.getElementById('conf-portas').value = c.fatorPortas;
-            document.getElementById('conf-gas').value = c.chanceGas;
-            document.getElementById('conf-chave').value = c.chanceChave;
         });
         function salvarConfig() {
             socket.emit('adminSalvarConfig', {
                 maxJogadores: document.getElementById('conf-max').value,
                 vidasIniciais: document.getElementById('conf-vidas').value,
                 velocidadeBot: document.getElementById('conf-speed').value,
-                fatorPortas: document.getElementById('conf-portas').value,
-                chanceGas: document.getElementById('conf-gas').value,
-                chanceChave: document.getElementById('conf-chave').value
+                fatorPortas: document.getElementById('conf-portas').value
             });
             fecharAdmin();
         }
@@ -318,7 +286,7 @@
             document.getElementById('main-menu').style.display='none'; document.getElementById('game-interface').style.display='flex';
             renderizarGrid(d.salas); SFX.start();
         });
-        socket.on('novaRodada', (d) => { renderizarGrid(d.salas); document.getElementById('message-box').innerText=`NÍVEL ${d.fase}`; SFX.start(); });
+        socket.on('novaRodada', (d) => { renderizarGrid(d.salas); document.getElementById('message-box').innerText=`RODADA ${d.fase}`; SFX.start(); });
 
         socket.on('mudancaDeTurno', (d) => {
             minhaVez = (d.idJogador === meuId); clearInterval(timerVisual);
