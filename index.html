@@ -26,7 +26,7 @@
             flex-direction: column;
         }
 
-        /* --- BOTÃO ADMIN --- */
+        /* --- UI COMPONENTES --- */
         #btn-admin-toggle {
             position: absolute; top: 20px; left: 20px;
             background: none; border: none; font-size: 24px; cursor: pointer;
@@ -34,15 +34,14 @@
         }
         #btn-admin-toggle:hover { color: white; transform: rotate(90deg); }
 
-        /* --- PAINEL ADMIN --- */
         #admin-panel {
             display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); z-index: 400;
+            background: rgba(0,0,0,0.95); z-index: 400; overflow-y: auto;
             flex-direction: column; justify-content: center; align-items: center;
         }
         .admin-card {
             background: #1a1a1a; padding: 20px; border: 1px solid var(--neon-blue);
-            border-radius: 10px; width: 300px; text-align: left;
+            border-radius: 10px; width: 320px; text-align: left; margin: 20px 0;
         }
         .admin-row { margin-bottom: 15px; }
         .admin-row label { display: block; color: #aaa; font-size: 14px; margin-bottom: 5px; }
@@ -50,16 +49,22 @@
             width: 100%; padding: 8px; background: #000; border: 1px solid #444; color: white; box-sizing: border-box; 
         }
         .btn-admin-save { background: var(--neon-blue); color: black; border: none; padding: 10px; width: 100%; cursor: pointer; font-weight: bold; margin-bottom: 10px; }
-        .btn-admin-reset { background: #d32f2f; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; font-weight: bold; }
         .btn-admin-close { background: #333; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; margin-top: 10px; }
 
-        /* --- MENU PRINCIPAL --- */
+        .online-badge {
+            position: absolute; top: 20px; right: 20px;
+            background: #111; border: 1px solid #333;
+            padding: 5px 15px; border-radius: 20px;
+            color: var(--neon-green); font-size: 14px; display: flex; align-items: center; gap: 5px;
+        }
+        .online-dot { width: 8px; height: 8px; background: var(--neon-green); border-radius: 50%; box-shadow: 0 0 5px var(--neon-green); }
+
+        /* --- MENU --- */
         #main-menu {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
             display: flex; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 200;
-            transition: opacity 0.5s;
+            z-index: 200; transition: opacity 0.5s;
         }
         .logo-title {
             font-size: 60px; color: transparent;
@@ -70,33 +75,14 @@
         }
         .menu-card {
             background: rgba(20, 20, 20, 0.9);
-            padding: 30px; border-radius: 15px;
-            border: 1px solid #333;
-            box-shadow: 0 0 30px rgba(0,0,0,0.8);
-            text-align: center; width: 90%; max-width: 400px;
+            padding: 30px; border-radius: 15px; border: 1px solid #333;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8); text-align: center; width: 90%; max-width: 400px;
         }
         
         .hall-fama-container { margin-top: 20px; border-top: 1px solid #333; padding-top: 15px; width: 100%; }
-        .rank-title { color: var(--neon-gold); font-size: 18px; margin-bottom: 10px; letter-spacing: 2px; }
         .rank-list { text-align: left; font-size: 14px; color: #ccc; max-height: 100px; overflow-y: auto; }
         .rank-item { padding: 5px 0; border-bottom: 1px dashed #333; display: flex; justify-content: space-between; }
         .rank-item span { color: var(--neon-gold); }
-
-        .online-badge {
-            position: absolute; top: 20px; right: 20px;
-            background: #111; border: 1px solid #333;
-            padding: 5px 15px; border-radius: 20px;
-            color: var(--neon-green); font-size: 14px; display: flex; align-items: center; gap: 5px;
-        }
-        .online-dot { width: 8px; height: 8px; background: var(--neon-green); border-radius: 50%; box-shadow: 0 0 5px var(--neon-green); }
-
-        .input-group { margin: 20px 0; display: flex; gap: 10px; flex-direction: column; }
-        input[type="text"], select {
-            padding: 15px; background: #000; border: 1px solid #444; color: white;
-            font-family: 'Rajdhani', sans-serif; font-size: 18px; text-align: center; border-radius: 8px;
-            outline: none; transition: 0.3s;
-        }
-        input:focus { border-color: var(--neon-blue); box-shadow: 0 0 10px rgba(0, 176, 255, 0.3); }
 
         .btn-large {
             padding: 15px; width: 100%; font-size: 20px; font-weight: bold;
@@ -105,29 +91,19 @@
         }
         .btn-large:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(0, 230, 118, 0.5); }
         
-        .lobby-status { margin-top: 20px; color: #777; font-size: 14px; min-height: 20px;}
+        input[type="text"], select {
+            padding: 15px; background: #000; border: 1px solid #444; color: white;
+            font-family: 'Rajdhani', sans-serif; font-size: 18px; text-align: center; border-radius: 8px;
+            outline: none; width: 100%; margin-bottom: 10px; box-sizing: border-box;
+        }
 
         /* --- JOGO --- */
         #game-interface { display: none; width: 100%; height: 100%; flex-direction: column; }
-        
-        #header {
-            height: 60px; background: #111; border-bottom: 2px solid #333;
-            display: flex; justify-content: space-between; align-items: center; padding: 0 20px;
-        }
-        .btn-back-header {
-            background: #333; color: white; border: 1px solid #555; padding: 5px 15px;
-            border-radius: 4px; cursor: pointer; font-weight: bold; font-family: 'Rajdhani', sans-serif;
-        }
-        .btn-back-header:hover { background: #d32f2f; }
-
+        #header { height: 60px; background: #111; border-bottom: 2px solid #333; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
         #main-container { display: flex; flex: 1; overflow: hidden; }
         #sidebar { width: 250px; background: #0a0a0a; border-right: 1px solid #222; overflow-y: auto; padding: 10px; }
-        #game-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
-        
-        #rooms-grid {
-            display: grid; gap: 10px; padding: 20px;
-            max-width: 800px; width: 100%; max-height: 80vh; overflow-y: auto;
-        }
+        #game-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #rooms-grid { display: grid; gap: 10px; padding: 20px; max-width: 800px; width: 100%; max-height: 80vh; overflow-y: auto; }
 
         .room-btn {
             aspect-ratio: 1; background: #1e1e1e; border: 1px solid #333; border-radius: 8px;
@@ -136,7 +112,6 @@
         }
         .room-btn:hover { background: #2a2a2a; border-color: #777; }
         .room-btn.taken { cursor: not-allowed; border-color: #444; background: #111; }
-        
         .room-btn.gas { background: #2e1e05 !important; border-color: #d35400 !important; }
         .room-btn.life { background: #052e05 !important; border-color: #27ae60 !important; }
         .room-btn.key { background: #2e2805 !important; border-color: #f1c40f !important; box-shadow: 0 0 15px rgba(241, 196, 15, 0.4) inset; }
@@ -146,10 +121,7 @@
         .room-content { font-size: 30px; }
         .occupant-name { font-size: 12px; margin-top: 5px; color: #aaa; font-weight: bold; max-width: 90%; overflow: hidden; white-space: nowrap; }
 
-        .player-item {
-            background: #151515; padding: 8px; margin-bottom: 5px; border-radius: 4px;
-            display: flex; justify-content: space-between; align-items: center; border-left: 3px solid transparent;
-        }
+        .player-item { background: #151515; padding: 8px; margin-bottom: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid transparent; }
         .player-item.p1 { border-left-color: var(--neon-green); }
         .player-item.p2 { border-left-color: var(--neon-blue); }
         .player-item.p3 { border-left-color: #d500f9; }
@@ -160,13 +132,9 @@
         #message-box { font-size: 24px; font-weight: bold; margin-bottom: 10px; height: 35px; text-shadow: 0 2px 10px black; }
         #timer-txt { font-size: 24px; color: var(--neon-gold); font-family: monospace; font-weight: bold; }
 
-        #victory-screen {
-            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50;
-        }
-
-        @keyframes shake { 0% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} 100% {transform: translateX(0);} }
+        #victory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
         
+        @keyframes shake { 0% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} 100% {transform: translateX(0);} }
         @media (max-width: 600px) {
             #main-container { flex-direction: column-reverse; }
             #sidebar { width: 100%; height: 150px; }
@@ -178,52 +146,42 @@
 <body>
 
     <button id="btn-admin-toggle" onclick="abrirAdmin()">⚙️</button>
-    <div class="online-badge">
-        <div class="online-dot"></div>
-        <span id="online-count">1</span> ONLINE
-    </div>
+    <div class="online-badge"><div class="online-dot"></div><span id="online-count">1</span> ONLINE</div>
 
     <div id="admin-panel">
         <div class="admin-card">
-            <h2 style="color:var(--neon-blue); margin-top:0;">PAINEL ADMIN</h2>
-            
+            <h2 style="color:var(--neon-blue); margin-top:0;">ADMINISTRADOR</h2>
             <div id="admin-login-area">
-                <div class="admin-row">
-                    <label>Senha:</label>
-                    <input type="password" id="admin-pass">
-                </div>
+                <div class="admin-row"><label>Senha:</label><input type="password" id="admin-pass"></div>
                 <button class="btn-admin-save" onclick="tentarLoginAdmin()">ACESSAR</button>
                 <button class="btn-admin-close" onclick="fecharAdmin()">CANCELAR</button>
             </div>
-
             <div id="admin-controls" style="display:none;">
                 <div class="admin-row">
-                    <label>Máximo Jogadores (Bots):</label>
-                    <input type="number" id="conf-max" value="20">
+                    <label>Máximo Jogadores (Bots):</label><input type="number" id="conf-max" value="20">
                 </div>
                 <div class="admin-row">
-                    <label>Vidas Iniciais:</label>
-                    <input type="number" id="conf-vidas" value="2">
+                    <label>Vidas Iniciais:</label><input type="number" id="conf-vidas" value="2">
+                </div>
+                <div class="admin-row">
+                    <label>Chance de Chave (0.1 = 10%):</label><input type="number" id="conf-chave" step="0.1" value="0.2">
+                </div>
+                <div class="admin-row">
+                    <label>Chance de Gás (0.4 = 40%):</label><input type="number" id="conf-gas" step="0.1" value="0.4">
+                </div>
+                <div class="admin-row">
+                    <label>Multiplicador Portas:</label><input type="number" id="conf-portas" step="0.1" value="1.2">
                 </div>
                 <div class="admin-row">
                     <label>Velocidade Bot (ms):</label>
                     <select id="conf-speed">
                         <option value="1000">Lento (1s)</option>
-                        <option value="500" selected>Rápido (0.5s)</option>
+                        <option value="500">Normal (0.5s)</option>
                         <option value="100">Flash (0.1s)</option>
                     </select>
                 </div>
-                <div class="admin-row">
-                    <label>Multiplicador de Portas:</label>
-                    <select id="conf-portas">
-                        <option value="1.0">Normal (1x)</option>
-                        <option value="1.5">Mais Portas (1.5x)</option>
-                        <option value="2.0">Dobro (2x)</option>
-                    </select>
-                </div>
-                
-                <button class="btn-admin-save" onclick="salvarConfig()">💾 SALVAR REGRAS</button>
-                <button class="btn-admin-reset" onclick="zerarRank()">🗑️ ZERAR RANK</button>
+                <button class="btn-admin-save" onclick="salvarConfig()">💾 SALVAR E REINICIAR</button>
+                <button class="btn-admin-close" style="background:#d32f2f" onclick="zerarRank()">🗑️ ZERAR RANK</button>
                 <button class="btn-admin-close" onclick="fecharAdmin()">FECHAR</button>
             </div>
         </div>
@@ -231,54 +189,38 @@
 
     <div id="main-menu">
         <div class="logo-title">SURVIVAL<br>ROYALE</div>
-        
         <div class="menu-card" id="login-step">
             <h3 style="margin:0 0 20px 0; color:#aaa;">IDENTIFICAÇÃO</h3>
-            <div class="input-group">
-                <input type="text" id="my-name" placeholder="SEU NICKNAME" maxlength="12">
-                <select id="my-color">
-                    <option value="p1">Equipe Verde</option>
-                    <option value="p2">Equipe Azul</option>
-                    <option value="p3">Equipe Roxa</option>
-                    <option value="p4">Equipe Amarela</option>
-                </select>
-            </div>
-            <button class="btn-large" onclick="entrarNoLobby()">ENTRAR NO LOBBY</button>
-            
+            <input type="text" id="my-name" placeholder="SEU NICKNAME" maxlength="12">
+            <select id="my-color">
+                <option value="p1">Equipe Verde</option>
+                <option value="p2">Equipe Azul</option>
+                <option value="p3">Equipe Roxa</option>
+                <option value="p4">Equipe Amarela</option>
+            </select>
+            <button class="btn-large" onclick="entrarNoLobby()">ENTRAR</button>
             <div class="hall-fama-container">
                 <div class="rank-title">🏆 HALL DA FAMA 🏆</div>
-                <div class="rank-list" id="rank-list-ui">
-                    <div style="text-align:center; padding:5px;">Carregando...</div>
-                </div>
+                <div class="rank-list" id="rank-list-ui"><div style="text-align:center;">...</div></div>
             </div>
         </div>
-
         <div class="menu-card" id="lobby-step" style="display:none;">
-            <h3 style="margin:0 0 10px 0; color:white;">SALA DE ESPERA</h3>
-            <div style="color:#777; margin-bottom: 20px;">
-                Aguarde amigos para <b>Multiplayer</b><br>
-                Ou inicie agora para jogar com <b>Bots</b>
-            </div>
-            
+            <h3 style="color:white;">SALA DE ESPERA</h3>
+            <div style="color:#777; margin-bottom:10px;">Aguarde amigos ou inicie com Bots</div>
             <div id="lobby-list" style="background:#000; padding:10px; border-radius:5px; height:100px; overflow-y:auto; margin-bottom:15px; text-align:left;"></div>
-
             <button id="btn-start" class="btn-large" style="background:var(--neon-gold); display:none;" onclick="iniciarJogo()">INICIAR PARTIDA</button>
-            <div class="lobby-status" id="lobby-msg">Aguardando o Host iniciar...</div>
+            <div class="lobby-status" id="lobby-msg">Aguardando Host...</div>
         </div>
     </div>
 
     <div id="game-interface">
         <div id="header">
-            <button class="btn-back-header" onclick="location.reload()">SAIR</button>
+            <button class="btn-back-header" style="background:#333; color:white; border:none; padding:5px 15px; cursor:pointer;" onclick="location.reload()">SAIR</button>
             <div id="timer-txt">--</div>
             <div style="font-weight:bold; font-size:14px;">VIVOS: <span id="alive-txt" style="color:white;">20</span></div>
         </div>
-
         <div id="main-container">
-            <div id="sidebar">
-                <div style="text-align:center; padding:5px; color:#555; font-size:12px; border-bottom:1px solid #333;">JOGADORES</div>
-                <div id="game-players-list"></div>
-            </div>
+            <div id="sidebar"><div id="game-players-list"></div></div>
             <div id="game-area">
                 <div id="message-box"></div>
                 <div id="rooms-grid"></div>
@@ -287,7 +229,7 @@
     </div>
 
     <div id="victory-screen">
-        <h1 style="color:var(--neon-gold); font-size: 50px; margin-bottom: 10px;">VENCEDOR</h1>
+        <h1 style="color:var(--neon-gold); font-size: 50px;">VENCEDOR</h1>
         <h2 id="winner-name" style="color:white; font-size: 40px;">-</h2>
         <button class="btn-large" style="width:200px; margin-top:30px;" onclick="location.reload()">VOLTAR</button>
     </div>
@@ -298,42 +240,36 @@
         let minhaVez = false;
         let timerVisual = null;
 
-        // --- ADMIN UI ---
+        // --- ADMIN ---
         function abrirAdmin() { document.getElementById('admin-panel').style.display = 'flex'; }
         function fecharAdmin() { document.getElementById('admin-panel').style.display = 'none'; }
-        
-        function tentarLoginAdmin() {
-            const senha = document.getElementById('admin-pass').value;
-            socket.emit('adminLogin', senha);
-        }
-
-        socket.on('adminLogado', (sucesso) => {
-            if(sucesso) {
-                document.getElementById('admin-login-area').style.display = 'none';
-                document.getElementById('admin-controls').style.display = 'block';
-            } else {
-                alert("Senha Incorreta!");
-            }
+        function tentarLoginAdmin() { socket.emit('adminLogin', document.getElementById('admin-pass').value); }
+        socket.on('adminLogado', (ok) => {
+            if(ok) { document.getElementById('admin-login-area').style.display='none'; document.getElementById('admin-controls').style.display='block'; }
+            else alert("Senha errada!");
         });
-
+        socket.on('configAtual', (c) => {
+            document.getElementById('conf-max').value = c.maxJogadores;
+            document.getElementById('conf-vidas').value = c.vidasIniciais;
+            document.getElementById('conf-speed').value = c.velocidadeBot;
+            document.getElementById('conf-portas').value = c.fatorPortas;
+            document.getElementById('conf-gas').value = c.chanceGas;
+            document.getElementById('conf-chave').value = c.chanceChave;
+        });
         function salvarConfig() {
-            const conf = {
+            socket.emit('adminSalvarConfig', {
                 maxJogadores: document.getElementById('conf-max').value,
                 vidasIniciais: document.getElementById('conf-vidas').value,
                 velocidadeBot: document.getElementById('conf-speed').value,
-                fatorPortas: document.getElementById('conf-portas').value
-            };
-            socket.emit('adminSalvarConfig', conf);
+                fatorPortas: document.getElementById('conf-portas').value,
+                chanceGas: document.getElementById('conf-gas').value,
+                chanceChave: document.getElementById('conf-chave').value
+            });
             fecharAdmin();
         }
+        function zerarRank() { if(confirm("Zerar?")) socket.emit('adminZerarRank'); }
 
-        function zerarRank() {
-            if(confirm("Tem certeza que quer apagar todo o ranking?")) {
-                socket.emit('adminZerarRank');
-            }
-        }
-
-        // --- SONS ---
+        // --- AUDIO ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playTone(f, t, d) {
             if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -341,189 +277,96 @@
             o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime);
             g.gain.setValueAtTime(0.1, audioCtx.currentTime);
             g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d);
-            o.connect(g); g.connect(audioCtx.destination);
-            o.start(); o.stop(audioCtx.currentTime + d);
+            o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + d);
         }
-        const SFX = {
-            click: () => playTone(600, 'sine', 0.1),
-            start: () => playTone(400, 'square', 0.3),
-            gas: () => playTone(150, 'sawtooth', 0.4),
-            life: () => playTone(800, 'triangle', 0.2),
-            key: () => playTone(1200, 'sine', 0.5), 
-            explode: () => playTone(60, 'square', 0.8),
-            win: () => playTone(600, 'sine', 0.6)
-        };
+        const SFX = { click:()=>playTone(600,'sine',0.1), start:()=>playTone(400,'square',0.3), gas:()=>playTone(150,'sawtooth',0.4), life:()=>playTone(800,'triangle',0.2), key:()=>playTone(1200,'sine',0.5), explode:()=>playTone(60,'square',0.8), win:()=>playTone(600,'sine',0.6) };
 
-        // --- CORE ---
-        
+        // --- LOGICA ---
         socket.on('connect', () => { meuId = socket.id; });
-        socket.on('jogadoresOnline', (qtd) => {
-            document.getElementById('online-count').innerText = qtd;
-        });
-
+        socket.on('jogadoresOnline', (n) => document.getElementById('online-count').innerText = n);
+        
         socket.on('atualizarRanking', (lista) => {
-            const el = document.getElementById('rank-list-ui');
-            if(lista.length === 0) {
-                el.innerHTML = '<div style="text-align:center; padding:5px;">Nenhum campeão ainda.</div>';
-                return;
-            }
-            el.innerHTML = lista.map(r => `
-                <div class="rank-item">
-                    <span>🏆 ${r.nome}</span>
-                    <div style="font-size:10px; color:#555;">${r.data}</div>
-                </div>
-            `).join('');
+            document.getElementById('rank-list-ui').innerHTML = lista.length ? lista.map(r=>`<div class="rank-item"><span>🏆 ${r.nome}</span><div style="font-size:10px; color:#555;">${r.data}</div></div>`).join('') : '<div style="text-align:center; padding:5px;">Vazio</div>';
         });
 
         function entrarNoLobby() {
-            const nome = document.getElementById('my-name').value;
-            const cor = document.getElementById('my-color').value;
-            if(!nome) return alert("Digite um nome!");
-
-            socket.emit('entrar', { nome: nome, tipo: cor });
-            
+            if(!document.getElementById('my-name').value) return alert("Nome?");
+            socket.emit('entrar', { nome: document.getElementById('my-name').value, tipo: document.getElementById('my-color').value });
             document.getElementById('login-step').style.display = 'none';
             document.getElementById('lobby-step').style.display = 'block';
             SFX.click();
         }
-
-        function iniciarJogo() {
-            socket.emit('iniciarJogo');
-        }
+        function iniciarJogo() { socket.emit('iniciarJogo'); }
 
         socket.on('atualizarLista', (jogadores) => {
-            const lobbyList = document.getElementById('lobby-list');
-            lobbyList.innerHTML = jogadores.map(j => `<div style="color:${j.id === meuId ? '#00e676' : 'white'}">${j.nome} ${j.id === meuId ? '(Você)' : ''}</div>`).join('');
-
-            if(jogadores.length > 0 && jogadores[0].id === meuId) {
-                document.getElementById('btn-start').style.display = 'block';
-                document.getElementById('lobby-msg').style.display = 'none';
-            }
-
-            const gameList = document.getElementById('game-players-list');
-            gameList.innerHTML = '';
+            document.getElementById('lobby-list').innerHTML = jogadores.map(j => `<div style="color:${j.id===meuId?'#00e676':'white'}">${j.nome}</div>`).join('');
+            if(jogadores.length>0 && jogadores[0].id===meuId) { document.getElementById('btn-start').style.display='block'; document.getElementById('lobby-msg').style.display='none'; }
+            
+            const gl = document.getElementById('game-players-list'); gl.innerHTML = '';
             jogadores.forEach(p => {
-                let div = document.createElement('div');
-                div.className = `player-item ${p.tipo}`;
-                div.id = `plist-${p.id}`;
+                let div = document.createElement('div'); div.className = `player-item ${p.tipo}`; div.id=`plist-${p.id}`;
                 if(!p.vivo) div.classList.add('dead');
                 let hp = p.vivo ? "❤️".repeat(p.vidas) : "💀";
-                if(p.temChave) hp = "🔑 SEGURO";
+                if(p.temChave) hp = "🔑 PROTEGIDO";
                 div.innerHTML = `<div>${p.nome}</div><div style="font-size:10px">${hp}</div>`;
-                gameList.appendChild(div);
+                gl.appendChild(div);
             });
             document.getElementById('alive-txt').innerText = jogadores.filter(j=>j.vivo).length;
         });
 
-        socket.on('inicioDePartida', (dados) => {
-            document.getElementById('main-menu').style.opacity = 0;
-            setTimeout(() => {
-                document.getElementById('main-menu').style.display = 'none';
-                document.getElementById('game-interface').style.display = 'flex';
-            }, 500);
-            renderizarGrid(dados.salas);
-            SFX.start();
+        socket.on('inicioDePartida', (d) => {
+            document.getElementById('main-menu').style.display='none'; document.getElementById('game-interface').style.display='flex';
+            renderizarGrid(d.salas); SFX.start();
         });
+        socket.on('novaRodada', (d) => { renderizarGrid(d.salas); document.getElementById('message-box').innerText=`NÍVEL ${d.fase}`; SFX.start(); });
 
-        socket.on('novaRodada', (dados) => {
-            renderizarGrid(dados.salas);
-            document.getElementById('message-box').innerText = `RODADA ${dados.fase}`;
-            SFX.start();
-        });
-
-        socket.on('mudancaDeTurno', (dados) => {
-            minhaVez = (dados.idJogador === meuId);
-            clearInterval(timerVisual);
+        socket.on('mudancaDeTurno', (d) => {
+            minhaVez = (d.idJogador === meuId); clearInterval(timerVisual);
+            document.querySelectorAll('.player-item').forEach(e=>e.classList.remove('turn'));
+            if(document.getElementById(`plist-${d.idJogador}`)) document.getElementById(`plist-${d.idJogador}`).classList.add('turn');
             
-            document.querySelectorAll('.player-item').forEach(el => el.classList.remove('turn'));
-            let pItem = document.getElementById(`plist-${dados.idJogador}`);
-            if(pItem) pItem.classList.add('turn');
-
-            let txt = document.getElementById('timer-txt');
+            let t = d.tempo; document.getElementById('timer-txt').innerText = t;
             let box = document.getElementById('message-box');
-            let tempo = dados.tempo;
+            if(minhaVez) { box.innerText=`SUA VEZ!`; box.style.color="var(--neon-green)"; document.getElementById('timer-txt').style.color="var(--neon-green)"; }
+            else { box.innerText=`VEZ DE ${d.nome}`; box.style.color="white"; document.getElementById('timer-txt').style.color="var(--neon-gold)"; }
             
-            txt.innerText = tempo;
-            if(minhaVez) {
-                txt.style.color = "var(--neon-green)";
-                box.innerText = `SUA VEZ, ${dados.nome}!`;
-                box.style.color = "var(--neon-green)";
-            } else {
-                txt.style.color = "var(--neon-gold)";
-                box.innerText = `VEZ DE ${dados.nome}`;
-                box.style.color = "white";
-            }
-
-            timerVisual = setInterval(() => {
-                tempo--;
-                txt.innerText = tempo;
-                if(tempo <= 0) clearInterval(timerVisual);
-            }, 1000);
+            timerVisual = setInterval(()=>{ t--; document.getElementById('timer-txt').innerText=t; if(t<=0) clearInterval(timerVisual); },1000);
         });
 
-        socket.on('salaOcupada', (dados) => {
-            clearInterval(timerVisual);
-            document.getElementById('timer-txt').innerText = "--";
+        socket.on('salaOcupada', (d) => {
+            clearInterval(timerVisual); document.getElementById('timer-txt').innerText="--";
+            let b = document.getElementById(`room-${d.idSala}`);
+            b.classList.add('taken');
+            let c = '#555';
+            if(d.jogador.tipo==='p1') c='var(--neon-green)'; if(d.jogador.tipo==='p2') c='var(--neon-blue)';
+            if(d.jogador.tipo==='p3') c='#d500f9'; if(d.jogador.tipo==='p4') c='var(--neon-gold)';
+            b.style.borderColor = c;
+            document.getElementById(`name-${d.idSala}`).innerText = d.jogador.nome;
+            let ic = document.getElementById(`icon-${d.idSala}`);
             
-            let btn = document.getElementById(`room-${dados.idSala}`);
-            let icon = document.getElementById(`icon-${dados.idSala}`);
-            let nome = document.getElementById(`name-${dados.idSala}`);
-
-            btn.classList.add('taken');
-            let cor = '#555';
-            if(dados.jogador.tipo === 'p1') cor = 'var(--neon-green)';
-            if(dados.jogador.tipo === 'p2') cor = 'var(--neon-blue)';
-            if(dados.jogador.tipo === 'p3') cor = '#d500f9';
-            if(dados.jogador.tipo === 'p4') cor = 'var(--neon-gold)';
-            btn.style.borderColor = cor;
-            nome.innerText = dados.jogador.nome;
-
-            if(dados.efeito === 'gas') { btn.classList.add('gas'); icon.innerText = '☠️'; SFX.gas(); }
-            else if(dados.efeito === 'vida') { btn.classList.add('life'); icon.innerText = '🟢'; SFX.life(); }
-            else if(dados.efeito === 'chave') { btn.classList.add('key'); icon.innerText = '🔑'; SFX.key(); }
-            else { icon.innerText = '😐'; SFX.click(); }
+            if(d.efeito==='gas') { b.classList.add('gas'); ic.innerText='☠️'; SFX.gas(); }
+            else if(d.efeito==='vida') { b.classList.add('life'); ic.innerText='🟢'; SFX.life(); }
+            else if(d.efeito==='chave') { b.classList.add('key'); ic.innerText='🔑'; SFX.key(); }
+            else { ic.innerText='😐'; SFX.click(); }
         });
 
-        socket.on('mensagem', (dados) => {
-            let box = document.getElementById('message-box');
-            box.innerText = dados.texto;
-            box.style.color = dados.cor;
+        socket.on('mensagem', (d) => { let b=document.getElementById('message-box'); b.innerText=d.texto; b.style.color=d.cor; });
+        socket.on('efeitoExplosao', (d) => {
+            let b=document.getElementById(`room-${d.idSala}`);
+            if(b) { b.classList.add('exploded'); document.getElementById(`icon-${d.idSala}`).innerText='💥'; SFX.explode(); }
         });
-
-        socket.on('efeitoExplosao', (dados) => {
-            let btn = document.getElementById(`room-${dados.idSala}`);
-            if(btn) {
-                btn.classList.add('exploded');
-                document.getElementById(`icon-${dados.idSala}`).innerText = '💥';
-                SFX.explode();
-            }
-        });
-
-        socket.on('fimDeJogo', (dados) => {
-            document.getElementById('victory-screen').style.display = 'flex';
-            document.getElementById('winner-name').innerText = dados.campeao.nome;
-            SFX.win();
+        socket.on('fimDeJogo', (d) => {
+            document.getElementById('victory-screen').style.display='flex'; document.getElementById('winner-name').innerText=d.campeao.nome; SFX.win();
         });
 
         function renderizarGrid(salas) {
-            const grid = document.getElementById('rooms-grid');
-            grid.innerHTML = '';
-            let cols = 5;
-            if(window.innerWidth < 600) cols = 4;
-            grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-
-            salas.forEach(sala => {
-                let btn = document.createElement('button');
-                btn.className = 'room-btn';
-                btn.id = `room-${sala.id}`;
-                btn.onclick = () => { if(minhaVez) socket.emit('jogarTurno', sala.id); };
-                
-                btn.innerHTML = `
-                    <div class="room-number">${sala.id}</div>
-                    <div class="room-content" id="icon-${sala.id}">🚪</div>
-                    <div class="occupant-name" id="name-${sala.id}"></div>
-                `;
-                grid.appendChild(btn);
+            const g = document.getElementById('rooms-grid'); g.innerHTML='';
+            let cols = window.innerWidth<600?4:5; g.style.gridTemplateColumns=`repeat(${cols}, 1fr)`;
+            salas.forEach(s => {
+                let b = document.createElement('button'); b.className='room-btn'; b.id=`room-${s.id}`;
+                b.onclick=()=>{if(minhaVez) socket.emit('jogarTurno', s.id);};
+                b.innerHTML=`<div class="room-number">${s.id}</div><div class="room-content" id="icon-${s.id}">🚪</div><div class="occupant-name" id="name-${s.id}"></div>`;
+                g.appendChild(b);
             });
         }
     </script>
