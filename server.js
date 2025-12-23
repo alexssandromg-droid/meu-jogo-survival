@@ -26,10 +26,12 @@ let timerTurno = null;
 let faseAtual = 1;
 let hallDaFama = [];
 
-// Variáveis da Votação
-let votosComputados = {}; // { idAlvo: numeroDeVotos }
+// Variáveis Votação/Duelo
+let votosComputados = {}; 
 let jaVotaram = [];
-let listaEmpatados = null; // Se houver empate, guarda quem são
+let dueloAtivo = false;
+let duelistas = []; // [player1, player2]
+let sinalVerde = false; // Controle do minigame
 
 // === AUXILIARES ===
 function iniciarSalas(qtdJogadores) {
@@ -37,11 +39,9 @@ function iniciarSalas(qtdJogadores) {
     if(qtdPortas < qtdJogadores) qtdPortas = qtdJogadores;
 
     let conteudos = [];
-    
-    // Distribuição focada em ESCUDOS
-    let qtdEscudo = Math.max(2, Math.floor(qtdPortas * 0.20)); // 20% Escudos (MUITO IMPORTANTE)
+    let qtdEscudo = Math.max(2, Math.floor(qtdPortas * 0.20)); 
     let qtdVida = Math.floor(qtdPortas * 0.10);
-    let qtdGas = Math.floor(qtdPortas * 0.10); // Menos gás, o perigo é o voto
+    let qtdGas = Math.floor(qtdPortas * 0.10); 
 
     for(let i=0; i<qtdEscudo; i++) conteudos.push('escudo');
     for(let i=0; i<qtdVida; i++) conteudos.push('vida');
@@ -61,14 +61,18 @@ function atualizarContadorOnline() {
 
 // === FLUXO DO JOGO ===
 
-// 1. RODADA DE ESCOLHA DE SALAS
 function processarProximoTurno() {
-    if(!jogoAndando) return;
+    if(!jogoAndando || dueloAtivo) return;
     clearTimeout(timerTurno);
 
-    // Se todos jogaram, INICIA VOTAÇÃO
     if(turnoIndex >= ordemTurno.length) {
-        iniciarFaseVotacao(null); // null = votação geral (sem empate previo)
+        // Fim da rodada -> Votação (se tiver gente suficiente)
+        let vivos = Object.values(jogadores).filter(j => j.vivo);
+        if(vivos.length > 1) {
+            iniciarFaseVotacao();
+        } else {
+            faseExplosao(null); // Só 1 vivo, acaba
+        }
         return;
     }
 
@@ -79,9 +83,7 @@ function processarProximoTurno() {
         return;
     }
 
-    io.emit('mudancaDeTurno', { 
-        idJogador: jogadorAtual.id, nome: jogadorAtual.nome, tempo: 10
-    });
+    io.emit('mudancaDeTurno', { idJogador: jogadorAtual.id, nome: jogadorAtual.nome, tempo: 10 });
 
     if(jogadorAtual.ehBot) {
         timerTurno = setTimeout(() => { jogadaDoBot(jogadorAtual); }, gameConfig.velocidadeBot);
@@ -114,16 +116,9 @@ function resolverEntrada(idSala, idJogador) {
         sala.ocupante = jogador.nome;
         jogador.sala = idSala;
 
-        // Efeitos imediatos (Coleta)
-        if(sala.tipo === 'gas') {
-            jogador.vidas -= 1; // Gás ainda machuca
-        }
-        else if(sala.tipo === 'vida') {
-            jogador.vidas += 1;
-        }
-        else if(sala.tipo === 'escudo') {
-            jogador.temEscudo = true; // Proteção contra votos!
-        }
+        if(sala.tipo === 'gas') jogador.vidas -= 1;
+        else if(sala.tipo === 'vida') jogador.vidas += 1;
+        else if(sala.tipo === 'escudo') jogador.temEscudo = true;
 
         if(jogador.vidas <= 0) jogador.vivo = false;
 
@@ -136,30 +131,19 @@ function resolverEntrada(idSala, idJogador) {
 }
 
 // 2. FASE DE VOTAÇÃO
-function iniciarFaseVotacao(empatados) {
+function iniciarFaseVotacao() {
     votosComputados = {};
     jaVotaram = [];
-    listaEmpatados = empatados;
-
-    let candidatos = [];
     
-    if(empatados) {
-        io.emit('mensagem', { texto: "⚠️ EMPATE! NOVA VOTAÇÃO DE DESEMPATE!", cor: "orange" });
-        candidatos = empatados;
-    } else {
-        io.emit('mensagem', { texto: "🗳️ HORA DA VOTAÇÃO! ESCOLHAM QUEM ELIMINAR.", cor: "#00b0ff" });
-        candidatos = Object.values(jogadores).filter(j => j.vivo);
-    }
-
-    // Manda cliente abrir o modal de votação
+    io.emit('mensagem', { texto: "🗳️ VOTAÇÃO INICIADA!", cor: "#00b0ff" });
+    let candidatos = Object.values(jogadores).filter(j => j.vivo);
     io.emit('abrirVotacao', candidatos);
 
-    // Bots votam automaticamente
+    // Bots votam
     Object.values(jogadores).filter(j => j.ehBot).forEach(bot => {
         setTimeout(() => {
-            // Bot vota em um candidato aleatório
             let alvo = candidatos[Math.floor(Math.random() * candidatos.length)];
-            registrarVoto(bot.id, alvo.id);
+            if(alvo) registrarVoto(bot.id, alvo.id);
         }, Math.random() * 2000 + 500);
     });
 }
@@ -167,15 +151,11 @@ function iniciarFaseVotacao(empatados) {
 function registrarVoto(idEleitor, idAlvo) {
     if(jaVotaram.includes(idEleitor)) return;
     
-    // Contabiliza
     if(!votosComputados[idAlvo]) votosComputados[idAlvo] = 0;
     votosComputados[idAlvo]++;
     jaVotaram.push(idEleitor);
 
-    // Checa se todos votaram (Vivos + Mortos)
     let totalJogadores = Object.keys(jogadores).length;
-    
-    // Atualiza progresso (sem revelar quem votou em quem)
     io.emit('progressoVotacao', { atual: jaVotaram.length, total: totalJogadores });
 
     if(jaVotaram.length >= totalJogadores) {
@@ -184,49 +164,104 @@ function registrarVoto(idEleitor, idAlvo) {
 }
 
 function finalizarVotacao() {
-    // Acha o mais votado
-    let maxVotos = -1;
-    let alvosMaisVotados = [];
+    io.emit('fecharVotacao');
 
-    for(let id in votosComputados) {
-        let qtd = votosComputados[id];
-        if(qtd > maxVotos) {
-            maxVotos = qtd;
-            alvosMaisVotados = [id];
-        } else if (qtd === maxVotos) {
-            alvosMaisVotados.push(id);
-        }
-    }
-
-    // Verifica Empate
-    if(alvosMaisVotados.length > 1) {
-        // Pega os objetos dos jogadores empatados
-        let objsEmpatados = alvosMaisVotados.map(id => jogadores[id]);
-        setTimeout(() => iniciarFaseVotacao(objsEmpatados), 2000);
+    // Ordena por votos (Decrescente)
+    let rankingVotos = Object.keys(votosComputados).sort((a,b) => votosComputados[b] - votosComputados[a]);
+    
+    // Se ninguém recebeu voto (raro), aleatório morre? Não, segue jogo.
+    if(rankingVotos.length === 0) {
+        io.emit('mensagem', { texto: "NINGUÉM VOTOU? QUE PAZ...", cor: "yellow" });
+        iniciarNovaRodada(Object.values(jogadores).filter(j=>j.vivo));
         return;
     }
 
-    // Temos um eliminado
-    let idEliminado = alvosMaisVotados[0];
-    let eliminado = jogadores[idEliminado];
+    // Pega os Top 2 (ou Top 1 se só tiver 1 votado)
+    let id1 = rankingVotos[0];
+    let id2 = rankingVotos[1];
 
-    // Verifica Escudo
-    if(eliminado.temEscudo) {
-        eliminado.temEscudo = false; // Quebra o escudo
-        io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} TINHA ESCUDO E SOBREVIVEU AOS VOTOS!`, cor: "#ffd700" });
-        io.emit('efeitoDefesa', { idVitima: eliminado.id });
+    if(!id2) {
+        // Só um foi votado (unanimidade), ele vai pro duelo sozinho? Não, morre direto.
+        faseExplosao(jogadores[id1]);
     } else {
-        eliminado.vivo = false;
-        eliminado.vidas = 0;
-        io.emit('mensagem', { texto: `💣 ${eliminado.nome} FOI ELIMINADO PELA VOTAÇÃO! (${maxVotos} VOTOS)`, cor: "red" });
-        io.emit('efeitoKill', { idVitima: eliminado.id });
-        if(eliminado.sala) io.emit('efeitoExplosao', { idSala: eliminado.sala, nome: eliminado.nome });
+        // TEMOS UM DUELO!
+        let p1 = jogadores[id1];
+        let p2 = jogadores[id2];
+        iniciarDuelo(p1, p2);
+    }
+}
+
+// 3. O DUELO (MINIGAME)
+function iniciarDuelo(p1, p2) {
+    if(!p1 || !p2) { faseExplosao(null); return; } // Segurança
+
+    dueloAtivo = true;
+    duelistas = [p1, p2];
+    sinalVerde = false;
+
+    io.emit('mensagem', { texto: `⚔️ DUELO: ${p1.nome} VS ${p2.nome}`, cor: "#ff00ff" });
+    io.emit('iniciarDueloUI', { p1: p1, p2: p2 });
+
+    // Preparar o tiro (Wait random time 2s - 6s)
+    let tempoEspera = Math.random() * 4000 + 2000;
+
+    setTimeout(() => {
+        if(!dueloAtivo) return; // Alguém já clicou antes
+        sinalVerde = true;
+        io.emit('sinalDuelo', 'ATIRAR!'); // Manda o verde
+
+        // Lógica dos Bots no Duelo
+        duelistas.forEach(d => {
+            if(d.ehBot && d.vivo) {
+                // Bot reage entre 300ms e 800ms
+                setTimeout(() => processarTiroDuelo(d.id), Math.random() * 500 + 300);
+            }
+        });
+
+    }, tempoEspera);
+}
+
+function processarTiroDuelo(idAtirador) {
+    if(!dueloAtivo) return; // Já acabou
+
+    let atirador = duelistas.find(d => d.id === idAtirador);
+    if(!atirador) return;
+
+    if(!sinalVerde) {
+        // QUEIMOU LARGADA (Clicou no vermelho) -> MORRE
+        dueloAtivo = false;
+        io.emit('resultadoDuelo', { vencedor: null, perdedor: atirador, motivo: "QUEIMOU LARGADA!" });
+        setTimeout(() => faseExplosao(atirador), 2000);
+    } else {
+        // CLICOU CERTO (Primeiro no verde) -> VENCE
+        dueloAtivo = false;
+        let perdedor = duelistas.find(d => d.id !== idAtirador);
+        io.emit('resultadoDuelo', { vencedor: atirador, perdedor: perdedor, motivo: "TIRO CERTEIRO!" });
+        setTimeout(() => faseExplosao(perdedor), 2000);
+    }
+}
+
+
+// 4. ELIMINAÇÃO FINAL
+function faseExplosao(eliminado) {
+    dueloAtivo = false;
+
+    if(eliminado) {
+        if(eliminado.temEscudo) {
+            eliminado.temEscudo = false;
+            io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} SOBREVIVEU COM ESCUDO!`, cor: "#ffd700" });
+            io.emit('efeitoDefesa', { idVitima: eliminado.id });
+        } else {
+            eliminado.vivo = false;
+            eliminado.vidas = 0;
+            io.emit('mensagem', { texto: `💥 ${eliminado.nome} FOI ELIMINADO!`, cor: "red" });
+            io.emit('efeitoKill', { idVitima: eliminado.id });
+            if(eliminado.sala) io.emit('efeitoExplosao', { idSala: eliminado.sala, nome: eliminado.nome });
+        }
     }
 
-    io.emit('fecharVotacao');
     io.emit('atualizarLista', Object.values(jogadores));
 
-    // Verifica Vencedor
     let vivos = Object.values(jogadores).filter(j => j.vivo);
     setTimeout(() => {
         if(vivos.length <= 1) {
@@ -246,14 +281,7 @@ function finalizarVotacao() {
 
 function iniciarNovaRodada(sobreviventes) {
     faseAtual++;
-    sobreviventes.forEach(j => { 
-        j.sala = null;
-        // Escudo se mantém? Vamos dizer que quebra ao mudar de nível pra ficar difícil
-        j.temEscudo = false; 
-    });
-    
-    // Jogadores mortos continuam na lista "jogadores" para poderem votar
-    // Mas para a ordem de turno, só os vivos
+    sobreviventes.forEach(j => { j.sala = null; j.temEscudo = false; });
     
     let vivos = Object.values(jogadores).filter(j => j.vivo);
     salasData = iniciarSalas(vivos.length);
@@ -270,7 +298,6 @@ io.on('connection', (socket) => {
     socket.emit('atualizarRanking', hallDaFama);
     socket.emit('configAtual', gameConfig);
 
-    // Admin
     socket.on('adminLogin', (s) => socket.emit('adminLogado', s === 'admin'));
     socket.on('adminSalvarConfig', (n) => {
         if(n.maxJogadores) gameConfig.maxJogadores = parseInt(n.maxJogadores);
@@ -281,7 +308,6 @@ io.on('connection', (socket) => {
     });
     socket.on('adminZerarRank', () => { hallDaFama = []; io.emit('atualizarRanking', hallDaFama); });
 
-    // Jogo
     socket.on('entrar', (dados) => {
         jogadores[socket.id] = {
             id: socket.id, nome: dados.nome, tipo: dados.tipo,
@@ -321,12 +347,13 @@ io.on('connection', (socket) => {
         }
     });
 
-    // RECEBE O VOTO
     socket.on('enviarVoto', (idAlvo) => {
-        // Qualquer um pode votar (vivo ou morto), desde que esteja no jogo
-        if(jogadores[socket.id]) {
-            registrarVoto(socket.id, idAlvo);
-        }
+        if(jogadores[socket.id]) registrarVoto(socket.id, idAlvo);
+    });
+
+    // AÇÃO DO DUELO
+    socket.on('cliqueDuelo', () => {
+        if(dueloAtivo) processarTiroDuelo(socket.id);
     });
 
     socket.on('disconnect', () => {
@@ -339,4 +366,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR VOTAÇÃO: ${PORT}`); });
+server.listen(PORT, () => { console.log(`SERVIDOR DUELO: ${PORT}`); });
