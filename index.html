@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Survival Royale: DUELO</title>
+    <title>Survival Royale: MEMÓRIA</title>
     <script src="/socket.io/socket.io.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
     <style>
@@ -13,22 +13,25 @@
         }
         body { background-color: var(--bg-dark); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; height: 100vh; overflow: hidden; user-select: none; display: flex; flex-direction: column; }
 
-        /* DUELO OVERLAY */
-        #duel-overlay {
+        /* --- MEMORY GAME UI --- */
+        #memory-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: #220000; z-index: 2000 !important;
+            background: rgba(10, 10, 10, 0.98); z-index: 2000 !important;
             flex-direction: column; justify-content: center; align-items: center;
-            transition: background 0.1s;
         }
-        #duel-status { font-size: 60px; font-weight: bold; color: white; margin-bottom: 30px; text-align:center; }
-        #duel-btn {
-            width: 200px; height: 200px; border-radius: 50%; border: 5px solid white;
-            background: rgba(255,255,255,0.1); color: white; font-size: 24px; cursor: pointer;
-            box-shadow: 0 0 30px rgba(255,255,255,0.2); font-weight: bold; display: none; /* Só mostra pros lutadores */
+        #mem-status { font-size: 30px; color: white; margin-bottom: 20px; text-align: center; }
+        .mem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .mem-btn {
+            width: 120px; height: 120px; border-radius: 15px; border: 4px solid #333;
+            cursor: pointer; transition: 0.1s; opacity: 0.5;
         }
-        #duel-btn:active { transform: scale(0.95); background: white; color: black; }
+        .mem-btn.red { background-color: #ff1744; }
+        .mem-btn.blue { background-color: #00b0ff; }
+        .mem-btn.green { background-color: #00e676; }
+        .mem-btn.yellow { background-color: #ffea00; }
         
-        .duel-vs { font-size: 24px; color: var(--neon-gold); margin-bottom: 20px; }
+        .mem-btn.active { opacity: 1; transform: scale(1.1); box-shadow: 0 0 30px white; border-color: white; }
+        .mem-btn:active { transform: scale(0.95); }
 
         /* VOTAÇÃO MODAL */
         #voting-modal {
@@ -92,7 +95,13 @@
         #victory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
         
         @keyframes shake { 0% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} 100% {transform: translateX(0);} }
-        @media (max-width: 600px) { #main-container { flex-direction: column-reverse; } #sidebar { width: 100%; height: 150px; } #rooms-grid { grid-template-columns: repeat(4, 1fr) !important; padding: 5px; } .logo-title { font-size: 40px; } .vote-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 600px) { 
+            #main-container { flex-direction: column-reverse; } 
+            #sidebar { width: 100%; height: 150px; } 
+            #rooms-grid { grid-template-columns: repeat(4, 1fr) !important; padding: 5px; } 
+            .logo-title { font-size: 40px; }
+            .vote-grid { grid-template-columns: repeat(2, 1fr); }
+        }
     </style>
 </head>
 <body>
@@ -100,11 +109,15 @@
     <button id="btn-admin-toggle" onclick="abrirAdmin()">⚙️</button>
     <div class="online-badge"><div class="online-dot"></div><span id="online-count">1</span> ONLINE</div>
 
-    <div id="duel-overlay">
-        <div id="duel-status">PREPARAR...</div>
-        <div class="duel-vs" id="duel-vs-txt"></div>
-        <button id="duel-btn" onmousedown="atirarDuelo()">FIRE</button>
-        <div style="margin-top:20px; color:#aaa;">(Quem clicar primeiro no VERDE vence)</div>
+    <div id="memory-overlay">
+        <div id="mem-status">OBSERVE...</div>
+        <div class="mem-grid">
+            <div class="mem-btn red" id="btn-0" onclick="sendMem(0)"></div>
+            <div class="mem-btn blue" id="btn-1" onclick="sendMem(1)"></div>
+            <div class="mem-btn green" id="btn-2" onclick="sendMem(2)"></div>
+            <div class="mem-btn yellow" id="btn-3" onclick="sendMem(3)"></div>
+        </div>
+        <div style="margin-top:20px; color:#aaa;">REPITAM A SEQUÊNCIA</div>
     </div>
 
     <div id="voting-modal">
@@ -174,11 +187,11 @@
 
     <script>
         const socket = io();
-        let meuId=null, minhaVez=false; timerVisual=null;
+        let meuId=null, minhaVez=false; timerVisual=null; let podeClicarMem = false;
 
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playTone(f,t,d){if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type=t;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.01,audioCtx.currentTime+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d);}
-        const SFX={click:()=>playTone(600,'sine',0.1),gas:()=>playTone(150,'sawtooth',0.4),life:()=>playTone(800,'triangle',0.2),key:()=>playTone(1200,'sine',0.5),explode:()=>playTone(60,'square',0.8),win:()=>playTone(600,'sine',0.6)};
+        const SFX={click:()=>playTone(600,'sine',0.1),gas:()=>playTone(150,'sawtooth',0.4),life:()=>playTone(800,'triangle',0.2),key:()=>playTone(1200,'sine',0.5),explode:()=>playTone(60,'square',0.8),win:()=>playTone(600,'sine',0.6), beep:()=>playTone(800,'square',0.1)};
 
         function abrirAdmin(){document.getElementById('admin-panel').style.display='flex';}
         function fecharAdmin(){document.getElementById('admin-panel').style.display='none';}
@@ -222,36 +235,50 @@
         socket.on('progressoVotacao', (d) => { document.getElementById('vote-status').innerText = `Computando: ${d.atual}/${d.total}`; });
         socket.on('fecharVotacao', () => { document.getElementById('voting-modal').style.display = 'none'; });
 
-        // --- DUELO ---
-        socket.on('iniciarDueloUI', (d) => {
-            const over = document.getElementById('duel-overlay');
+        // --- MEMORY GAME ---
+        socket.on('iniciarMemoryUI', (d) => {
+            const over = document.getElementById('memory-overlay');
             over.style.display = 'flex';
-            over.style.background = '#220000'; // Reset para vermelho
-            document.getElementById('duel-status').innerText = "PREPARAR...";
-            document.getElementById('duel-vs-txt').innerText = `${d.p1.nome} VS ${d.p2.nome}`;
-            
-            // Só habilita o botão para quem está lutando
+            document.getElementById('mem-status').innerText = "ATENÇÃO!";
+            // Habilita/Desabilita clique baseado se é um dos jogadores
             if(d.p1.id === meuId || d.p2.id === meuId) {
-                document.getElementById('duel-btn').style.display = 'block';
+                podeClicarMem = false; // Espera sequencia
             } else {
-                document.getElementById('duel-btn').style.display = 'none';
+                podeClicarMem = false; // Espectador
             }
         });
 
-        socket.on('sinalDuelo', (txt) => {
-            document.getElementById('duel-status').innerText = txt;
-            document.getElementById('duel-overlay').style.background = '#004400'; // Verde
-            SFX.start(); // Som de sinal
+        socket.on('memoryShowSequence', (seq) => {
+            podeClicarMem = false;
+            document.getElementById('mem-status').innerText = "OBSERVE...";
+            let delay = 500;
+            seq.forEach((corIndex, i) => {
+                setTimeout(() => {
+                    let btn = document.getElementById(`btn-${corIndex}`);
+                    btn.classList.add('active');
+                    SFX.beep();
+                    setTimeout(() => btn.classList.remove('active'), 400);
+                }, delay + (i * 800));
+            });
+            
+            setTimeout(() => {
+                document.getElementById('mem-status').innerText = "SUA VEZ!";
+                podeClicarMem = true;
+            }, delay + (seq.length * 800));
         });
 
-        function atirarDuelo() {
-            socket.emit('cliqueDuelo');
+        function sendMem(idx) {
+            if(podeClicarMem) {
+                SFX.click();
+                let btn = document.getElementById(`btn-${idx}`);
+                btn.classList.add('active');
+                setTimeout(() => btn.classList.remove('active'), 200);
+                socket.emit('memoryInput', idx);
+            }
         }
 
-        socket.on('resultadoDuelo', (r) => {
-            let txt = r.vencedor ? `${r.vencedor.nome} VENCEU!` : "AMBOS FALHARAM";
-            document.getElementById('duel-status').innerText = txt + " (" + r.motivo + ")";
-            setTimeout(() => { document.getElementById('duel-overlay').style.display = 'none'; }, 2000);
+        socket.on('memoryResultado', () => {
+            document.getElementById('memory-overlay').style.display = 'none';
         });
 
         socket.on('atualizarLista',(jogadores)=>{
