@@ -26,16 +26,16 @@ let timerTurno = null;
 let faseAtual = 1;
 let hallDaFama = [];
 
-// Variáveis Votação
+// Votação
 let votosComputados = {}; 
 let jaVotaram = [];
 
-// Variáveis Memória
-let memoryAtivo = false;
-let memoryPlayers = []; // [p1, p2]
-let memorySeq = [];
-let playerProgress = {}; // { id: indice_atual }
-let rodadaMemory = 1;
+// === VARIÁVEIS DO TABULEIRO ===
+let boardAtivo = false;
+let boardPlayers = []; // [p1, p2]
+let boardPositions = {}; // { id: 0 }
+let boardTurn = 0; // 0 ou 1 (índice do array boardPlayers)
+const BOARD_SIZE = 20; // Tamanho da pista
 
 // === AUXILIARES ===
 function iniciarSalas(qtdJogadores) {
@@ -66,10 +66,9 @@ function atualizarContadorOnline() {
 // === FLUXO DO JOGO ===
 
 function processarProximoTurno() {
-    if(!jogoAndando || memoryAtivo) return;
+    if(!jogoAndando || boardAtivo) return;
     clearTimeout(timerTurno);
 
-    // Fim da rodada de escolhas -> Votação
     if(turnoIndex >= ordemTurno.length) {
         let vivos = Object.values(jogadores).filter(j => j.vivo);
         if(vivos.length > 1) {
@@ -183,115 +182,97 @@ function finalizarVotacao() {
     let id1 = rankingVotos[0];
     let id2 = rankingVotos[1];
 
-    // Se tiver empate ou top 2, vai pro Memory Game
     if(id2) {
-        // Verifica se houve empate real nos votos
-        if(votosComputados[id1] === votosComputados[id2]) {
-             iniciarMemoryGame(jogadores[id1], jogadores[id2]);
-             return;
-        }
-    }
-    
-    // Se não teve empate, o mais votado explode (ou joga memória contra o segundo para tentar se salvar? 
-    // Vamos fazer: Top 2 sempre duelam na memória pela vida)
-    if(id2) {
-        iniciarMemoryGame(jogadores[id1], jogadores[id2]);
+        // Empate ou Top 2 -> Vão para o Tabuleiro
+        iniciarBoardGame(jogadores[id1], jogadores[id2]);
     } else {
+        // Só um foi votado, mas vamos dar chance dele se salvar no tabuleiro? 
+        // Não, a lógica do Paredão é duelo. Se foi unanime, explode.
         faseExplosao(jogadores[id1]);
     }
 }
 
-// 3. JOGO DA MEMÓRIA (SIMON SAYS)
-function iniciarMemoryGame(p1, p2) {
+// 3. JOGO DO TABULEIRO (BOARD GAME)
+function iniciarBoardGame(p1, p2) {
     if(!p1 || !p2) { faseExplosao(null); return; }
 
-    memoryAtivo = true;
-    memoryPlayers = [p1, p2];
-    rodadaMemory = 3; // Começa com 3 cores
-    
-    io.emit('mensagem', { texto: `🧠 MEMÓRIA: ${p1.nome} VS ${p2.nome}`, cor: "#d500f9" });
-    io.emit('iniciarMemoryUI', { p1: p1, p2: p2 });
+    boardAtivo = true;
+    boardPlayers = [p1, p2];
+    boardPositions = {};
+    boardPositions[p1.id] = 0;
+    boardPositions[p2.id] = 0;
+    boardTurn = 0; // Começa player 1
 
-    setTimeout(novaRodadaMemory, 3000);
+    io.emit('mensagem', { texto: `🎲 TABULEIRO: ${p1.nome} VS ${p2.nome}`, cor: "#ff9100" });
+    io.emit('iniciarBoardUI', { p1: p1, p2: p2, tamanho: BOARD_SIZE });
+
+    processarTurnoBoard();
 }
 
-function novaRodadaMemory() {
-    if(!memoryAtivo) return;
+function processarTurnoBoard() {
+    if(!boardAtivo) return;
+
+    let atual = boardPlayers[boardTurn];
     
-    // Gera sequencia
-    memorySeq = [];
-    for(let i=0; i<rodadaMemory; i++) {
-        memorySeq.push(Math.floor(Math.random() * 4)); // 0, 1, 2, 3 (Cores)
+    io.emit('vezBoard', { id: atual.id, nome: atual.nome });
+
+    // Se for bot, joga sozinho
+    if(atual.ehBot && atual.vivo) {
+        setTimeout(() => rolarDado(atual.id), 1500);
+    }
+}
+
+function rolarDado(idSolicitante) {
+    if(!boardAtivo) return;
+    let atual = boardPlayers[boardTurn];
+
+    // Verifica se é a vez de quem pediu
+    if(atual.id !== idSolicitante) return;
+
+    // Rola 1 a 6
+    let dado = Math.floor(Math.random() * 6) + 1;
+    let novaPos = boardPositions[atual.id] + dado;
+    
+    // Efeitos de Casas Especiais (Armadilhas)
+    let msgExtra = "";
+    // Exemplo: Casa 13 dá azar (volta 3)
+    if(novaPos === 13) {
+        novaPos -= 3;
+        msgExtra = " (AZAR! VOLTOU 3)";
+    }
+    // Exemplo: Casa 7 dá sorte (avança 2)
+    if(novaPos === 7) {
+        novaPos += 2;
+        msgExtra = " (SORTE! AVANÇOU 2)";
     }
 
-    // Reseta progresso
-    playerProgress = {};
-    memoryPlayers.forEach(p => playerProgress[p.id] = 0); // Índice que o player tem que acertar
+    if(novaPos > BOARD_SIZE) novaPos = BOARD_SIZE;
+    boardPositions[atual.id] = novaPos;
 
-    io.emit('memoryShowSequence', memorySeq);
-
-    // Bots jogam
-    memoryPlayers.forEach(p => {
-        if(p.ehBot && p.vivo) {
-            jogarBotMemory(p);
-        }
+    io.emit('dadoRolado', { 
+        id: atual.id, 
+        dado: dado, 
+        pos: novaPos, 
+        msg: msgExtra 
     });
-}
 
-function jogarBotMemory(bot) {
-    let delay = 2000 + (rodadaMemory * 500); // Espera mostrar a sequencia
-    
-    memorySeq.forEach((corCorreta, index) => {
-        setTimeout(() => {
-            if(!memoryAtivo) return;
-            // 10% de chance de errar por clique
-            let input = (Math.random() > 0.1) ? corCorreta : Math.floor(Math.random()*4);
-            validarInputMemory(bot.id, input);
-        }, delay + (index * 800));
-    });
-}
-
-function validarInputMemory(idJogador, corInput) {
-    if(!memoryAtivo) return;
-    
-    // Verifica se é um dos duelistas
-    if(!memoryPlayers.find(p => p.id === idJogador)) return;
-
-    let indiceAtual = playerProgress[idJogador];
-    let corCorreta = memorySeq[indiceAtual];
-
-    if(corInput === corCorreta) {
-        // Acertou esse passo
-        playerProgress[idJogador]++;
+    // Verifica Vitória
+    if(novaPos >= BOARD_SIZE) {
+        boardAtivo = false;
+        let perdedor = boardPlayers.find(p => p.id !== atual.id);
         
-        // Completou a sequência toda?
-        if(playerProgress[idJogador] >= memorySeq.length) {
-            // Verifica se o outro também completou ou se ainda está jogando
-            let oponente = memoryPlayers.find(p => p.id !== idJogador);
-            
-            // Se ambos completaram (simultaneo), aumenta nível
-            if(playerProgress[oponente.id] >= memorySeq.length) {
-                rodadaMemory++;
-                io.emit('mensagem', { texto: "AMBOS ACERTARAM! NÍVEL SUBIU!", cor: "cyan" });
-                setTimeout(novaRodadaMemory, 2000);
-            }
-        }
-    } else {
-        // ERROU! PERDEU!
-        let perdedor = jogadores[idJogador];
-        let vencedor = memoryPlayers.find(p => p.id !== idJogador);
-        
-        memoryAtivo = false;
-        io.emit('memoryResultado', { vencedor: vencedor, perdedor: perdedor });
-        io.emit('mensagem', { texto: `❌ ${perdedor.nome} ERROU A SEQUÊNCIA!`, cor: "red" });
-        
+        io.emit('mensagem', { texto: `🏁 ${atual.nome} VENCEU A CORRIDA!`, cor: "#00e676" });
         setTimeout(() => faseExplosao(perdedor), 2000);
+    } else {
+        // Passa a vez
+        boardTurn = (boardTurn === 0) ? 1 : 0;
+        setTimeout(processarTurnoBoard, 1000);
     }
 }
 
 // 4. ELIMINAÇÃO FINAL
 function faseExplosao(eliminado) {
-    memoryAtivo = false;
+    boardAtivo = false;
 
     if(eliminado) {
         if(eliminado.temEscudo) {
@@ -398,9 +379,9 @@ io.on('connection', (socket) => {
         if(jogadores[socket.id]) registrarVoto(socket.id, idAlvo);
     });
 
-    // INPUT DO JOGO DA MEMÓRIA
-    socket.on('memoryInput', (corIndex) => {
-        if(memoryAtivo) validarInputMemory(socket.id, corIndex);
+    // INPUT DO DADO
+    socket.on('pedirDado', () => {
+        if(boardAtivo) rolarDado(socket.id);
     });
 
     socket.on('disconnect', () => {
@@ -413,4 +394,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR MEMORY: ${PORT}`); });
+server.listen(PORT, () => { console.log(`SERVIDOR TABULEIRO: ${PORT}`); });
