@@ -26,6 +26,33 @@
             flex-direction: column;
         }
 
+        /* --- BOTÃO ADMIN --- */
+        #btn-admin-toggle {
+            position: absolute; top: 20px; left: 20px;
+            background: none; border: none; font-size: 24px; cursor: pointer;
+            color: #333; transition: 0.3s; z-index: 300;
+        }
+        #btn-admin-toggle:hover { color: white; transform: rotate(90deg); }
+
+        /* --- PAINEL ADMIN --- */
+        #admin-panel {
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); z-index: 400;
+            flex-direction: column; justify-content: center; align-items: center;
+        }
+        .admin-card {
+            background: #1a1a1a; padding: 20px; border: 1px solid var(--neon-blue);
+            border-radius: 10px; width: 300px; text-align: left;
+        }
+        .admin-row { margin-bottom: 15px; }
+        .admin-row label { display: block; color: #aaa; font-size: 14px; margin-bottom: 5px; }
+        .admin-row input, .admin-row select { 
+            width: 100%; padding: 8px; background: #000; border: 1px solid #444; color: white; box-sizing: border-box; 
+        }
+        .btn-admin-save { background: var(--neon-blue); color: black; border: none; padding: 10px; width: 100%; cursor: pointer; font-weight: bold; margin-bottom: 10px; }
+        .btn-admin-reset { background: #d32f2f; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; font-weight: bold; }
+        .btn-admin-close { background: #333; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; margin-top: 10px; }
+
         /* --- MENU PRINCIPAL --- */
         #main-menu {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -49,13 +76,7 @@
             text-align: center; width: 90%; max-width: 400px;
         }
         
-        /* HALL DA FAMA (NOVO) */
-        .hall-fama-container {
-            margin-top: 20px;
-            border-top: 1px solid #333;
-            padding-top: 15px;
-            width: 100%;
-        }
+        .hall-fama-container { margin-top: 20px; border-top: 1px solid #333; padding-top: 15px; width: 100%; }
         .rank-title { color: var(--neon-gold); font-size: 18px; margin-bottom: 10px; letter-spacing: 2px; }
         .rank-list { text-align: left; font-size: 14px; color: #ccc; max-height: 100px; overflow-y: auto; }
         .rank-item { padding: 5px 0; border-bottom: 1px dashed #333; display: flex; justify-content: space-between; }
@@ -156,9 +177,56 @@
 </head>
 <body>
 
+    <button id="btn-admin-toggle" onclick="abrirAdmin()">⚙️</button>
     <div class="online-badge">
         <div class="online-dot"></div>
         <span id="online-count">1</span> ONLINE
+    </div>
+
+    <div id="admin-panel">
+        <div class="admin-card">
+            <h2 style="color:var(--neon-blue); margin-top:0;">PAINEL ADMIN</h2>
+            
+            <div id="admin-login-area">
+                <div class="admin-row">
+                    <label>Senha:</label>
+                    <input type="password" id="admin-pass">
+                </div>
+                <button class="btn-admin-save" onclick="tentarLoginAdmin()">ACESSAR</button>
+                <button class="btn-admin-close" onclick="fecharAdmin()">CANCELAR</button>
+            </div>
+
+            <div id="admin-controls" style="display:none;">
+                <div class="admin-row">
+                    <label>Máximo Jogadores (Bots):</label>
+                    <input type="number" id="conf-max" value="20">
+                </div>
+                <div class="admin-row">
+                    <label>Vidas Iniciais:</label>
+                    <input type="number" id="conf-vidas" value="2">
+                </div>
+                <div class="admin-row">
+                    <label>Velocidade Bot (ms):</label>
+                    <select id="conf-speed">
+                        <option value="1000">Lento (1s)</option>
+                        <option value="500" selected>Rápido (0.5s)</option>
+                        <option value="100">Flash (0.1s)</option>
+                    </select>
+                </div>
+                <div class="admin-row">
+                    <label>Multiplicador de Portas:</label>
+                    <select id="conf-portas">
+                        <option value="1.0">Normal (1x)</option>
+                        <option value="1.5">Mais Portas (1.5x)</option>
+                        <option value="2.0">Dobro (2x)</option>
+                    </select>
+                </div>
+                
+                <button class="btn-admin-save" onclick="salvarConfig()">💾 SALVAR REGRAS</button>
+                <button class="btn-admin-reset" onclick="zerarRank()">🗑️ ZERAR RANK</button>
+                <button class="btn-admin-close" onclick="fecharAdmin()">FECHAR</button>
+            </div>
+        </div>
     </div>
 
     <div id="main-menu">
@@ -230,6 +298,41 @@
         let minhaVez = false;
         let timerVisual = null;
 
+        // --- ADMIN UI ---
+        function abrirAdmin() { document.getElementById('admin-panel').style.display = 'flex'; }
+        function fecharAdmin() { document.getElementById('admin-panel').style.display = 'none'; }
+        
+        function tentarLoginAdmin() {
+            const senha = document.getElementById('admin-pass').value;
+            socket.emit('adminLogin', senha);
+        }
+
+        socket.on('adminLogado', (sucesso) => {
+            if(sucesso) {
+                document.getElementById('admin-login-area').style.display = 'none';
+                document.getElementById('admin-controls').style.display = 'block';
+            } else {
+                alert("Senha Incorreta!");
+            }
+        });
+
+        function salvarConfig() {
+            const conf = {
+                maxJogadores: document.getElementById('conf-max').value,
+                vidasIniciais: document.getElementById('conf-vidas').value,
+                velocidadeBot: document.getElementById('conf-speed').value,
+                fatorPortas: document.getElementById('conf-portas').value
+            };
+            socket.emit('adminSalvarConfig', conf);
+            fecharAdmin();
+        }
+
+        function zerarRank() {
+            if(confirm("Tem certeza que quer apagar todo o ranking?")) {
+                socket.emit('adminZerarRank');
+            }
+        }
+
         // --- SONS ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function playTone(f, t, d) {
@@ -251,14 +354,13 @@
             win: () => playTone(600, 'sine', 0.6)
         };
 
-        // --- MENU E LOBBY ---
+        // --- CORE ---
         
         socket.on('connect', () => { meuId = socket.id; });
         socket.on('jogadoresOnline', (qtd) => {
             document.getElementById('online-count').innerText = qtd;
         });
 
-        // Atualizar Ranking no Menu
         socket.on('atualizarRanking', (lista) => {
             const el = document.getElementById('rank-list-ui');
             if(lista.length === 0) {
@@ -313,7 +415,6 @@
             document.getElementById('alive-txt').innerText = jogadores.filter(j=>j.vivo).length;
         });
 
-        // --- O JOGO COMEÇOU ---
         socket.on('inicioDePartida', (dados) => {
             document.getElementById('main-menu').style.opacity = 0;
             setTimeout(() => {
@@ -330,7 +431,6 @@
             SFX.start();
         });
 
-        // --- TURNOS ---
         socket.on('mudancaDeTurno', (dados) => {
             minhaVez = (dados.idJogador === meuId);
             clearInterval(timerVisual);
@@ -361,7 +461,6 @@
             }, 1000);
         });
 
-        // --- AÇÕES ---
         socket.on('salaOcupada', (dados) => {
             clearInterval(timerVisual);
             document.getElementById('timer-txt').innerText = "--";
@@ -403,8 +502,6 @@
         socket.on('fimDeJogo', (dados) => {
             document.getElementById('victory-screen').style.display = 'flex';
             document.getElementById('winner-name').innerText = dados.campeao.nome;
-            // Atualiza o ranking localmente também (embora o server já mande)
-            // Mas aqui usamos o dado que veio no fimDeJogo se quiser garantir
             SFX.win();
         });
 
