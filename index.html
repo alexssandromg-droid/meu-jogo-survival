@@ -26,7 +26,7 @@
             flex-direction: column;
         }
 
-        /* --- MENU PRINCIPAL (NOVO) --- */
+        /* --- MENU PRINCIPAL --- */
         #main-menu {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
@@ -43,11 +43,24 @@
         }
         .menu-card {
             background: rgba(20, 20, 20, 0.9);
-            padding: 40px; border-radius: 15px;
+            padding: 30px; border-radius: 15px;
             border: 1px solid #333;
             box-shadow: 0 0 30px rgba(0,0,0,0.8);
             text-align: center; width: 90%; max-width: 400px;
         }
+        
+        /* HALL DA FAMA (NOVO) */
+        .hall-fama-container {
+            margin-top: 20px;
+            border-top: 1px solid #333;
+            padding-top: 15px;
+            width: 100%;
+        }
+        .rank-title { color: var(--neon-gold); font-size: 18px; margin-bottom: 10px; letter-spacing: 2px; }
+        .rank-list { text-align: left; font-size: 14px; color: #ccc; max-height: 100px; overflow-y: auto; }
+        .rank-item { padding: 5px 0; border-bottom: 1px dashed #333; display: flex; justify-content: space-between; }
+        .rank-item span { color: var(--neon-gold); }
+
         .online-badge {
             position: absolute; top: 20px; right: 20px;
             background: #111; border: 1px solid #333;
@@ -56,7 +69,6 @@
         }
         .online-dot { width: 8px; height: 8px; background: var(--neon-green); border-radius: 50%; box-shadow: 0 0 5px var(--neon-green); }
 
-        /* Inputs do Menu */
         .input-group { margin: 20px 0; display: flex; gap: 10px; flex-direction: column; }
         input[type="text"], select {
             padding: 15px; background: #000; border: 1px solid #444; color: white;
@@ -74,10 +86,9 @@
         
         .lobby-status { margin-top: 20px; color: #777; font-size: 14px; min-height: 20px;}
 
-        /* --- JOGO (Escondido inicialmente) --- */
+        /* --- JOGO --- */
         #game-interface { display: none; width: 100%; height: 100%; flex-direction: column; }
         
-        /* Header do Jogo */
         #header {
             height: 60px; background: #111; border-bottom: 2px solid #333;
             display: flex; justify-content: space-between; align-items: center; padding: 0 20px;
@@ -88,7 +99,6 @@
         }
         .btn-back-header:hover { background: #d32f2f; }
 
-        /* Área Principal */
         #main-container { display: flex; flex: 1; overflow: hidden; }
         #sidebar { width: 250px; background: #0a0a0a; border-right: 1px solid #222; overflow-y: auto; padding: 10px; }
         #game-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
@@ -98,7 +108,6 @@
             max-width: 800px; width: 100%; max-height: 80vh; overflow-y: auto;
         }
 
-        /* Botões das Salas */
         .room-btn {
             aspect-ratio: 1; background: #1e1e1e; border: 1px solid #333; border-radius: 8px;
             color: #555; cursor: pointer; position: relative; display: flex; flex-direction: column;
@@ -107,7 +116,6 @@
         .room-btn:hover { background: #2a2a2a; border-color: #777; }
         .room-btn.taken { cursor: not-allowed; border-color: #444; background: #111; }
         
-        /* Efeitos Visuais */
         .room-btn.gas { background: #2e1e05 !important; border-color: #d35400 !important; }
         .room-btn.life { background: #052e05 !important; border-color: #27ae60 !important; }
         .room-btn.key { background: #2e2805 !important; border-color: #f1c40f !important; box-shadow: 0 0 15px rgba(241, 196, 15, 0.4) inset; }
@@ -117,7 +125,6 @@
         .room-content { font-size: 30px; }
         .occupant-name { font-size: 12px; margin-top: 5px; color: #aaa; font-weight: bold; max-width: 90%; overflow: hidden; white-space: nowrap; }
 
-        /* Lista de Jogadores */
         .player-item {
             background: #151515; padding: 8px; margin-bottom: 5px; border-radius: 4px;
             display: flex; justify-content: space-between; align-items: center; border-left: 3px solid transparent;
@@ -129,11 +136,9 @@
         .player-item.turn { background: #222; border-right: 3px solid var(--neon-gold); }
         .player-item.dead { text-decoration: line-through; opacity: 0.4; }
         
-        /* Mensagens e Timer */
         #message-box { font-size: 24px; font-weight: bold; margin-bottom: 10px; height: 35px; text-shadow: 0 2px 10px black; }
         #timer-txt { font-size: 24px; color: var(--neon-gold); font-family: monospace; font-weight: bold; }
 
-        /* Tela de Vitória */
         #victory-screen {
             display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50;
@@ -141,7 +146,6 @@
 
         @keyframes shake { 0% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} 100% {transform: translateX(0);} }
         
-        /* Responsivo */
         @media (max-width: 600px) {
             #main-container { flex-direction: column-reverse; }
             #sidebar { width: 100%; height: 150px; }
@@ -172,6 +176,13 @@
                 </select>
             </div>
             <button class="btn-large" onclick="entrarNoLobby()">ENTRAR NO LOBBY</button>
+            
+            <div class="hall-fama-container">
+                <div class="rank-title">🏆 HALL DA FAMA 🏆</div>
+                <div class="rank-list" id="rank-list-ui">
+                    <div style="text-align:center; padding:5px;">Carregando...</div>
+                </div>
+            </div>
         </div>
 
         <div class="menu-card" id="lobby-step" style="display:none;">
@@ -181,8 +192,7 @@
                 Ou inicie agora para jogar com <b>Bots</b>
             </div>
             
-            <div id="lobby-list" style="background:#000; padding:10px; border-radius:5px; height:100px; overflow-y:auto; margin-bottom:15px; text-align:left;">
-                </div>
+            <div id="lobby-list" style="background:#000; padding:10px; border-radius:5px; height:100px; overflow-y:auto; margin-bottom:15px; text-align:left;"></div>
 
             <button id="btn-start" class="btn-large" style="background:var(--neon-gold); display:none;" onclick="iniciarJogo()">INICIAR PARTIDA</button>
             <div class="lobby-status" id="lobby-msg">Aguardando o Host iniciar...</div>
@@ -248,6 +258,21 @@
             document.getElementById('online-count').innerText = qtd;
         });
 
+        // Atualizar Ranking no Menu
+        socket.on('atualizarRanking', (lista) => {
+            const el = document.getElementById('rank-list-ui');
+            if(lista.length === 0) {
+                el.innerHTML = '<div style="text-align:center; padding:5px;">Nenhum campeão ainda.</div>';
+                return;
+            }
+            el.innerHTML = lista.map(r => `
+                <div class="rank-item">
+                    <span>🏆 ${r.nome}</span>
+                    <div style="font-size:10px; color:#555;">${r.data}</div>
+                </div>
+            `).join('');
+        });
+
         function entrarNoLobby() {
             const nome = document.getElementById('my-name').value;
             const cor = document.getElementById('my-color').value;
@@ -264,19 +289,15 @@
             socket.emit('iniciarJogo');
         }
 
-        // Atualiza a lista do Lobby E do Jogo
         socket.on('atualizarLista', (jogadores) => {
-            // Atualiza Lobby
             const lobbyList = document.getElementById('lobby-list');
             lobbyList.innerHTML = jogadores.map(j => `<div style="color:${j.id === meuId ? '#00e676' : 'white'}">${j.nome} ${j.id === meuId ? '(Você)' : ''}</div>`).join('');
 
-            // Botão de Iniciar (Só para o primeiro/host)
             if(jogadores.length > 0 && jogadores[0].id === meuId) {
                 document.getElementById('btn-start').style.display = 'block';
                 document.getElementById('lobby-msg').style.display = 'none';
             }
 
-            // Atualiza Lista In-Game
             const gameList = document.getElementById('game-players-list');
             gameList.innerHTML = '';
             jogadores.forEach(p => {
@@ -299,7 +320,6 @@
                 document.getElementById('main-menu').style.display = 'none';
                 document.getElementById('game-interface').style.display = 'flex';
             }, 500);
-            
             renderizarGrid(dados.salas);
             SFX.start();
         });
@@ -315,7 +335,6 @@
             minhaVez = (dados.idJogador === meuId);
             clearInterval(timerVisual);
             
-            // UI Update
             document.querySelectorAll('.player-item').forEach(el => el.classList.remove('turn'));
             let pItem = document.getElementById(`plist-${dados.idJogador}`);
             if(pItem) pItem.classList.add('turn');
@@ -352,15 +371,12 @@
             let nome = document.getElementById(`name-${dados.idSala}`);
 
             btn.classList.add('taken');
-            
-            // Cor da borda
             let cor = '#555';
             if(dados.jogador.tipo === 'p1') cor = 'var(--neon-green)';
             if(dados.jogador.tipo === 'p2') cor = 'var(--neon-blue)';
             if(dados.jogador.tipo === 'p3') cor = '#d500f9';
             if(dados.jogador.tipo === 'p4') cor = 'var(--neon-gold)';
             btn.style.borderColor = cor;
-            
             nome.innerText = dados.jogador.nome;
 
             if(dados.efeito === 'gas') { btn.classList.add('gas'); icon.innerText = '☠️'; SFX.gas(); }
@@ -384,18 +400,17 @@
             }
         });
 
-        socket.on('fimDeJogo', (campeao) => {
+        socket.on('fimDeJogo', (dados) => {
             document.getElementById('victory-screen').style.display = 'flex';
-            document.getElementById('winner-name').innerText = campeao.nome;
+            document.getElementById('winner-name').innerText = dados.campeao.nome;
+            // Atualiza o ranking localmente também (embora o server já mande)
+            // Mas aqui usamos o dado que veio no fimDeJogo se quiser garantir
             SFX.win();
         });
 
-        // --- RENDERIZAR ---
         function renderizarGrid(salas) {
             const grid = document.getElementById('rooms-grid');
             grid.innerHTML = '';
-            
-            // Ajustar colunas dinamicamente
             let cols = 5;
             if(window.innerWidth < 600) cols = 4;
             grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
