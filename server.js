@@ -94,6 +94,7 @@ function processarProximoTurno() {
 function jogadaDoBot(jogador) {
     if(!jogoAndando) return;
 
+    // Bot Assassino tenta matar
     if(jogador.role === 'assassin' && Math.random() < gameConfig.chanceBotKill) {
         let vitimas = ordemTurno.filter(j => j.vivo && j.id !== jogador.id);
         if(vitimas.length > 0) {
@@ -113,7 +114,6 @@ function jogadaDoBot(jogador) {
     }
 }
 
-// === AQUI MUDOU: PASSA A FACA ADIANTE ===
 function executarAssassinato(assassino, idVitima) {
     let vitima = jogadores[idVitima];
     if(vitima && vitima.vivo) {
@@ -123,22 +123,19 @@ function executarAssassinato(assassino, idVitima) {
         io.emit('mensagem', { texto: `🔪 ${assassino.nome} MATOU E PASSOU A FACA!`, cor: "#ff1744" });
         io.emit('efeitoKill', { idVitima: vitima.id }); 
         
-        // 1. Remove cargo do assassino atual
+        // Perde o cargo
         assassino.role = 'crew';
         if(!assassino.ehBot) io.to(assassino.id).emit('seuPapel', 'crew');
 
-        // 2. Escolhe NOVO assassino entre os vivos (exceto quem acabou de matar)
+        // Escolhe novo assassino
         let possiveisNovos = Object.values(jogadores).filter(j => j.vivo && j.id !== assassino.id && j.id !== vitima.id);
         
         if(possiveisNovos.length > 0) {
             let novoAssassino = possiveisNovos[Math.floor(Math.random() * possiveisNovos.length)];
             novoAssassino.role = 'assassin';
-            
-            // Avisa o novo assassino
             if(!novoAssassino.ehBot) {
                 io.to(novoAssassino.id).emit('seuPapel', 'assassin');
             }
-            // Não avisa publicamente quem é o novo!
         }
 
         io.emit('atualizarLista', Object.values(jogadores));
@@ -198,8 +195,6 @@ function resolverEntrada(idSala, idJogador) {
         if(jogador.vidas <= 0) { 
             jogador.vivo = false; 
             jogador.temChave = false;
-            // Se o assassino morrer na sala, a faca tem que passar pra outro?
-            // Vamos deixar simples: se ele morre, a faca some até a proxima rodada.
         }
 
         io.emit('salaOcupada', { idSala: idSala, jogador: jogador, efeito: sala.tipo, msg: msgExtra });
@@ -250,13 +245,12 @@ function iniciarNovaRodada(sobreviventes) {
     sobreviventes.forEach(j => { 
         j.temChave = false; 
         j.sala = null; 
-        j.role = 'crew'; // Reseta tudo
+        j.role = 'crew';
         jogadores[j.id] = j;
     });
     
     let lista = Object.values(jogadores);
 
-    // Sorteio Inicial da Rodada
     if(lista.length > 0) {
         let novoAssassino = lista[Math.floor(Math.random() * lista.length)];
         novoAssassino.role = 'assassin';
@@ -335,6 +329,11 @@ io.on('connection', (socket) => {
         }
     });
 
+    // === A CORREÇÃO ESTÁ AQUI EMBAIXO ===
+    socket.on('pedirListaUpdate', () => {
+        socket.emit('atualizarLista', Object.values(jogadores));
+    });
+
     socket.on('disconnect', () => {
         if(jogadores[socket.id]) { jogadores[socket.id].vivo = false; delete jogadores[socket.id]; }
         let humanos = Object.values(jogadores).filter(j => !j.ehBot);
@@ -345,4 +344,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR ROTATIVO: ${PORT}`); });
+server.listen(PORT, () => { console.log(`SERVIDOR CORRIGIDO: ${PORT}`); });
