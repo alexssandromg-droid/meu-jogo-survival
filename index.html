@@ -1,245 +1,314 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Survival Royale Online</title>
-    <script src="/socket.io/socket.io.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --neon-green: #00e676; --neon-blue: #00b0ff; --neon-gold: #ffea00;
-            --neon-red: #ff1744; --neon-purple: #d500f9;
-            --bg-dark: #050505; --card-bg: #111;
+const express = require('express');
+const app = express();
+const http = require('http');
+const server = http.createServer(app);
+const { Server } = require("socket.io");
+const io = new Server(server);
+
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/index.html');
+});
+
+// === CONFIGURAÇÕES GLOBAIS ===
+let gameConfig = {
+    maxJogadores: 20,
+    vidasIniciais: 2,
+    velocidadeBot: 500,
+    fatorPortas: 1.2
+};
+
+// === DADOS DO JOGO ===
+let jogadores = {}; 
+let salasData = [];
+let jogoAndando = false;
+let ordemTurno = [];
+let turnoIndex = 0;
+let timerTurno = null;
+let faseAtual = 1;
+let hallDaFama = [];
+
+// === GERADOR DE SALAS COM NOVAS DINÂMICAS ===
+function iniciarSalas(qtdJogadores) {
+    let qtdPortas = Math.ceil(qtdJogadores * gameConfig.fatorPortas);
+    if(qtdPortas < qtdJogadores) qtdPortas = qtdJogadores;
+
+    let conteudos = ['chave']; 
+    
+    // Distribuição (Balanceada para o Caos)
+    let qtdGas = Math.floor(qtdPortas * 0.20);      // 20% Gás
+    let qtdVida = Math.floor(qtdPortas * 0.10);     // 10% Vida
+    let qtdVampiro = Math.floor(qtdPortas * 0.05);  // 5% Vampiro
+    let qtdTroca = Math.floor(qtdPortas * 0.05);    // 5% Troca
+    let qtdMina = Math.floor(qtdPortas * 0.05);     // 5% Mina
+    let qtdEspiao = Math.floor(qtdPortas * 0.05);   // 5% Espião
+
+    for(let i=0; i<qtdGas; i++) conteudos.push('gas');
+    for(let i=0; i<qtdVida; i++) conteudos.push('vida');
+    for(let i=0; i<qtdVampiro; i++) conteudos.push('vampiro');
+    for(let i=0; i<qtdTroca; i++) conteudos.push('troca');
+    for(let i=0; i<qtdMina; i++) conteudos.push('mina');
+    for(let i=0; i<qtdEspiao; i++) conteudos.push('espiao');
+    
+    while(conteudos.length < qtdPortas) { conteudos.push('vazio'); }
+    conteudos.sort(() => Math.random() - 0.5);
+
+    return conteudos.map((tipo, index) => ({
+        id: index + 1, tipo: tipo, ocupante: null, bloqueada: false
+    }));
+}
+
+function atualizarContadorOnline() {
+    io.emit('jogadoresOnline', io.engine.clientsCount);
+}
+
+// === LÓGICA DE TURNOS ===
+function processarProximoTurno() {
+    if(!jogoAndando) return;
+    clearTimeout(timerTurno);
+
+    if(turnoIndex >= ordemTurno.length) {
+        io.emit('mensagem', { texto: "⚠️ ASSASSINO CHEGANDO...", cor: "orange" });
+        setTimeout(faseExplosao, 2000);
+        return;
+    }
+
+    let jogadorAtual = ordemTurno[turnoIndex];
+    if(!jogadorAtual || !jogadorAtual.vivo) {
+        turnoIndex++;
+        processarProximoTurno();
+        return;
+    }
+
+    io.emit('mudancaDeTurno', { 
+        idJogador: jogadorAtual.id, nome: jogadorAtual.nome, tempo: 10
+    });
+
+    if(jogadorAtual.ehBot) {
+        timerTurno = setTimeout(() => { jogadaDoBot(jogadorAtual); }, gameConfig.velocidadeBot);
+    } else {
+        timerTurno = setTimeout(() => {
+            io.emit('mensagem', { texto: `${jogadorAtual.nome} VACILOU!`, cor: "red" });
+            jogadaDoBot(jogadorAtual);
+        }, 10000);
+    }
+}
+
+function jogadaDoBot(jogador) {
+    if(!jogoAndando) return;
+    let salasLivres = salasData.filter(s => !s.bloqueada);
+    if(salasLivres.length > 0) {
+        let escolha = salasLivres[Math.floor(Math.random() * salasLivres.length)];
+        resolverEntrada(escolha.id, jogador.id);
+    } else {
+        turnoIndex++;
+        processarProximoTurno();
+    }
+}
+
+function resolverEntrada(idSala, idJogador) {
+    if(!jogoAndando) return;
+    let sala = salasData.find(s => s.id === idSala);
+    let jogador = jogadores[idJogador] || ordemTurno.find(j => j.id === idJogador);
+
+    if(sala && !sala.bloqueada && jogador && jogador.vivo) {
+        clearTimeout(timerTurno);
+        sala.bloqueada = true;
+        sala.ocupante = jogador.nome;
+        jogador.sala = idSala;
+        let msgExtra = "";
+
+        // === EFEITOS ESPECIAIS ===
+        if(sala.tipo === 'gas') {
+            jogador.vidas -= 1;
         }
-        body { background-color: var(--bg-dark); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; height: 100vh; overflow: hidden; user-select: none; display: flex; flex-direction: column; }
-
-        /* ADMIN & UI */
-        #btn-admin-toggle { position: absolute; top: 20px; left: 20px; background: none; border: none; font-size: 24px; cursor: pointer; color: #333; z-index: 300; transition:0.3s; }
-        #btn-admin-toggle:hover { color: white; transform: rotate(90deg); }
-        .online-badge { position: absolute; top: 20px; right: 20px; background: #111; border: 1px solid #333; padding: 5px 15px; border-radius: 20px; color: var(--neon-green); font-size: 14px; display: flex; align-items: center; gap: 5px; }
-        .online-dot { width: 8px; height: 8px; background: var(--neon-green); border-radius: 50%; box-shadow: 0 0 5px var(--neon-green); }
-
-        #admin-panel { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 400; flex-direction: column; justify-content: center; align-items: center; }
-        .admin-card { background: #1a1a1a; padding: 20px; border: 1px solid var(--neon-blue); border-radius: 10px; width: 300px; text-align: left; }
-        .admin-row { margin-bottom: 10px; }
-        .admin-row label { display: block; color: #aaa; font-size: 14px; }
-        .admin-row input, .admin-row select { width: 100%; padding: 5px; background: #000; border: 1px solid #444; color: white; box-sizing: border-box; }
-        .btn-admin { padding: 10px; width: 100%; cursor: pointer; font-weight: bold; margin-top:5px; border:none; }
-
-        /* MENU */
-        #main-menu { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 200; transition: opacity 0.5s; }
-        .logo-title { font-size: 60px; background: linear-gradient(to right, var(--neon-green), var(--neon-blue)); -webkit-background-clip: text; color: transparent; text-shadow: 0 0 20px rgba(0, 230, 118, 0.5); margin-bottom: 10px; text-align: center; }
-        .menu-card { background: rgba(20, 20, 20, 0.9); padding: 30px; border-radius: 15px; border: 1px solid #333; width: 90%; max-width: 400px; text-align: center; }
-        .btn-large { padding: 15px; width: 100%; font-size: 20px; font-weight: bold; background: var(--neon-green); color: black; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
-        input[type="text"], select { padding: 15px; background: #000; border: 1px solid #444; color: white; font-family: 'Rajdhani', sans-serif; font-size: 18px; text-align: center; border-radius: 8px; outline: none; width: 100%; margin-bottom: 10px; box-sizing: border-box; }
-        
-        .hall-fama-container { margin-top: 20px; border-top: 1px solid #333; padding-top: 10px; }
-        .rank-item { display: flex; justify-content: space-between; border-bottom: 1px dashed #333; padding: 5px; color: var(--neon-gold); }
-
-        /* JOGO */
-        #game-interface { display: none; width: 100%; height: 100%; flex-direction: column; }
-        #header { height: 60px; background: #111; border-bottom: 2px solid #333; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
-        #main-container { display: flex; flex: 1; overflow: hidden; }
-        #sidebar { width: 250px; background: #0a0a0a; border-right: 1px solid #222; overflow-y: auto; padding: 10px; }
-        #game-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        #rooms-grid { display: grid; gap: 10px; padding: 20px; max-width: 800px; width: 100%; max-height: 80vh; overflow-y: auto; }
-
-        /* BOTOES E EFEITOS */
-        .room-btn { aspect-ratio: 1; background: #1e1e1e; border: 1px solid #333; border-radius: 8px; color: #555; cursor: pointer; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.1s; }
-        .room-btn:hover { background: #2a2a2a; border-color: #777; }
-        .room-btn.taken { cursor: not-allowed; border-color: #444; background: #111; }
-        
-        .room-btn.gas { background: #2e1e05 !important; border-color: #d35400 !important; }
-        .room-btn.life { background: #052e05 !important; border-color: #27ae60 !important; }
-        .room-btn.key { background: #2e2805 !important; border-color: #f1c40f !important; box-shadow: 0 0 15px rgba(241, 196, 15, 0.4) inset; }
-        .room-btn.escudo { background: #002233 !important; border-color: #00b0ff !important; }
-        .room-btn.sabotagem { background: #330000 !important; border-color: #ff1744 !important; }
-        .room-btn.aposta { background: #330033 !important; border-color: #d500f9 !important; }
-        .room-btn.radar { background: #003300 !important; border-color: #00e676 !important; }
-        .room-btn.exploded { background: #500 !important; border-color: red !important; animation: shake 0.5s; }
-
-        .room-number { position: absolute; top: 5px; left: 8px; font-weight: bold; color: rgba(255,255,255,0.3); font-size: 14px; }
-        .room-content { font-size: 30px; }
-        .occupant-name { font-size: 12px; margin-top: 5px; color: #aaa; font-weight: bold; max-width: 90%; overflow: hidden; white-space: nowrap; }
-
-        /* LISTA JOGADORES */
-        .player-item { background: #151515; padding: 8px; margin-bottom: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid transparent; }
-        .player-item.p1 { border-left-color: var(--neon-green); } .player-item.p2 { border-left-color: var(--neon-blue); }
-        .player-item.p3 { border-left-color: var(--neon-purple); } .player-item.p4 { border-left-color: var(--neon-gold); }
-        .player-item.turn { background: #222; border-right: 3px solid var(--neon-gold); }
-        .player-item.dead { text-decoration: line-through; opacity: 0.4; }
-
-        #message-box { font-size: 24px; font-weight: bold; margin-bottom: 10px; height: 35px; text-shadow: 0 2px 10px black; }
-        #timer-txt { font-size: 24px; color: var(--neon-gold); font-family: monospace; font-weight: bold; }
-        #victory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
-        @keyframes shake { 0% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} 100% {transform: translateX(0);} }
-        @media (max-width: 600px) { #main-container { flex-direction: column-reverse; } #sidebar { width: 100%; height: 150px; } #rooms-grid { grid-template-columns: repeat(4, 1fr) !important; padding: 5px; } .logo-title { font-size: 40px; } }
-    </style>
-</head>
-<body>
-
-    <button id="btn-admin-toggle" onclick="abrirAdmin()">⚙️</button>
-    <div class="online-badge"><div class="online-dot"></div><span id="online-count">1</span> ONLINE</div>
-
-    <div id="admin-panel">
-        <div class="admin-card">
-            <h2 style="color:var(--neon-blue); margin-top:0;">ADMIN</h2>
-            <div id="admin-login-area">
-                <div class="admin-row"><label>Senha:</label><input type="password" id="admin-pass"></div>
-                <button class="btn-admin" style="background:var(--neon-blue)" onclick="tentarLoginAdmin()">ENTRAR</button>
-                <button class="btn-admin" style="background:#333; color:white" onclick="fecharAdmin()">CANCELAR</button>
-            </div>
-            <div id="admin-controls" style="display:none;">
-                <div class="admin-row"><label>Jogadores Max:</label><input type="number" id="conf-max" value="20"></div>
-                <div class="admin-row"><label>Vidas:</label><input type="number" id="conf-vidas" value="2"></div>
-                <div class="admin-row"><label>Bot Speed (ms):</label><input type="number" id="conf-speed" value="500"></div>
-                <div class="admin-row"><label>Mult. Portas:</label><input type="number" id="conf-portas" value="1.2" step="0.1"></div>
-                <button class="btn-admin" style="background:var(--neon-green)" onclick="salvarConfig()">SALVAR</button>
-                <button class="btn-admin" style="background:var(--neon-red); color:white" onclick="zerarRank()">ZERAR RANK</button>
-                <button class="btn-admin" style="background:#333; color:white" onclick="fecharAdmin()">FECHAR</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="main-menu">
-        <div class="logo-title">SURVIVAL<br>ROYALE</div>
-        <div class="menu-card" id="login-step">
-            <h3 style="margin:0 0 20px 0; color:#aaa;">LOGIN</h3>
-            <input type="text" id="my-name" placeholder="NICKNAME" maxlength="12">
-            <select id="my-color"><option value="p1">Verde</option><option value="p2">Azul</option><option value="p3">Roxo</option><option value="p4">Amarelo</option></select>
-            <button class="btn-large" onclick="entrarNoLobby()">JOGAR</button>
-            <div class="hall-fama-container">
-                <div style="color:var(--neon-gold); letter-spacing:2px; margin-bottom:5px;">🏆 HALL DA FAMA 🏆</div>
-                <div class="rank-list" id="rank-list-ui" style="text-align:center;">...</div>
-            </div>
-        </div>
-        <div class="menu-card" id="lobby-step" style="display:none;">
-            <h3 style="color:white;">LOBBY</h3>
-            <div style="color:#777; margin-bottom:10px;">Aguardando...</div>
-            <div id="lobby-list" style="background:#000; padding:10px; border-radius:5px; height:100px; overflow-y:auto; margin-bottom:15px; text-align:left;"></div>
-            <button id="btn-start" class="btn-large" style="background:var(--neon-gold); display:none;" onclick="iniciarJogo()">INICIAR</button>
-            <div style="color:#555; font-size:12px; margin-top:10px;" id="lobby-msg">Só o host inicia</div>
-        </div>
-    </div>
-
-    <div id="game-interface">
-        <div id="header">
-            <button onclick="location.reload()" style="background:#333; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">SAIR</button>
-            <div id="timer-txt">--</div>
-            <div style="font-weight:bold; font-size:14px;">VIVOS: <span id="alive-txt" style="color:white;">0</span></div>
-        </div>
-        <div id="main-container">
-            <div id="sidebar"><div id="game-players-list"></div></div>
-            <div id="game-area"><div id="message-box"></div><div id="rooms-grid"></div></div>
-        </div>
-    </div>
-
-    <div id="victory-screen">
-        <h1 style="color:var(--neon-gold); font-size:50px;">VENCEDOR</h1>
-        <h2 id="winner-name" style="color:white;">-</h2>
-        <button class="btn-large" style="width:200px; margin-top:20px;" onclick="location.reload()">VOLTAR</button>
-    </div>
-
-    <script>
-        const socket = io();
-        let meuId=null, minhaVez=false, timerVisual=null;
-
-        // Audio
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        function playTone(f,t,d){if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type=t;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.01,audioCtx.currentTime+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d);}
-        const SFX={click:()=>playTone(600,'sine',0.1),gas:()=>playTone(150,'sawtooth',0.4),life:()=>playTone(800,'triangle',0.2),key:()=>playTone(1200,'sine',0.5),explode:()=>playTone(60,'square',0.8),win:()=>playTone(600,'sine',0.6)};
-
-        // Admin
-        function abrirAdmin(){document.getElementById('admin-panel').style.display='flex';}
-        function fecharAdmin(){document.getElementById('admin-panel').style.display='none';}
-        function tentarLoginAdmin(){socket.emit('adminLogin',document.getElementById('admin-pass').value);}
-        socket.on('adminLogado',(ok)=>{if(ok){document.getElementById('admin-login-area').style.display='none';document.getElementById('admin-controls').style.display='block';}else alert("Senha errada");});
-        socket.on('configAtual',(c)=>{document.getElementById('conf-max').value=c.maxJogadores;document.getElementById('conf-vidas').value=c.vidasIniciais;document.getElementById('conf-speed').value=c.velocidadeBot;document.getElementById('conf-portas').value=c.fatorPortas;});
-        function salvarConfig(){socket.emit('adminSalvarConfig',{maxJogadores:document.getElementById('conf-max').value,vidasIniciais:document.getElementById('conf-vidas').value,velocidadeBot:document.getElementById('conf-speed').value,fatorPortas:document.getElementById('conf-portas').value});fecharAdmin();}
-        function zerarRank(){if(confirm("Zerar?"))socket.emit('adminZerarRank');}
-
-        // Logic
-        socket.on('connect',()=>{meuId=socket.id;});
-        socket.on('jogadoresOnline',(n)=>document.getElementById('online-count').innerText=n);
-        socket.on('atualizarRanking',(l)=>{document.getElementById('rank-list-ui').innerHTML=l.length?l.map(r=>`<div class="rank-item"><span>🏆 ${r.nome}</span><span style="color:#555;font-size:10px">${r.data}</span></div>`).join(''):"Vazio";});
-
-        function entrarNoLobby(){
-            if(!document.getElementById('my-name').value)return alert("Nome?");
-            socket.emit('entrar',{nome:document.getElementById('my-name').value,tipo:document.getElementById('my-color').value});
-            document.getElementById('login-step').style.display='none';document.getElementById('lobby-step').style.display='block';
-            SFX.click();
+        else if(sala.tipo === 'vida') {
+            jogador.vidas += 1;
         }
-        function iniciarJogo(){socket.emit('iniciarJogo');}
+        else if(sala.tipo === 'chave') {
+            jogador.temChave = true;
+        }
+        else if(sala.tipo === 'vampiro') {
+            // Rouba 1 vida de alguém vivo
+            let vitimas = ordemTurno.filter(j => j.vivo && j.id !== jogador.id && j.vidas > 0);
+            if(vitimas.length > 0) {
+                let alvo = vitimas[Math.floor(Math.random() * vitimas.length)];
+                alvo.vidas -= 1;
+                jogador.vidas += 1;
+                if(alvo.vidas <= 0) alvo.vivo = false;
+                msgExtra = ` (ROUBOU DE ${alvo.nome}!)`;
+            } else {
+                msgExtra = " (SEM VÍTIMAS!)";
+            }
+        }
+        else if(sala.tipo === 'troca') {
+            // Troca vidas
+            let alvos = ordemTurno.filter(j => j.vivo && j.id !== jogador.id);
+            if(alvos.length > 0) {
+                let alvo = alvos[Math.floor(Math.random() * alvos.length)];
+                let vidaMinha = jogador.vidas;
+                let vidaDele = alvo.vidas;
+                jogador.vidas = vidaDele;
+                alvo.vidas = vidaMinha;
+                msgExtra = ` (TROCOU COM ${alvo.nome}!)`;
+            }
+        }
+        else if(sala.tipo === 'mina') {
+            // Transforma uma sala vazia em Gás
+            let salasVazias = salasData.filter(s => s.tipo === 'vazio' && !s.bloqueada);
+            if(salasVazias.length > 0) {
+                let alvoSala = salasVazias[Math.floor(Math.random() * salasVazias.length)];
+                alvoSala.tipo = 'gas'; // Agora é mortal!
+                msgExtra = " (UMA SALA VIROU GÁS!)";
+            } else {
+                msgExtra = " (FALHOU)";
+            }
+        }
+        else if(sala.tipo === 'espiao') {
+            // Revela onde tem perigo
+            let perigos = salasData.filter(s => (s.tipo === 'gas' || s.tipo === 'mina') && !s.bloqueada);
+            if(perigos.length > 0) {
+                let revelada = perigos[Math.floor(Math.random() * perigos.length)];
+                io.emit('mensagem', { texto: `🕵️ ESPIÃO: CUIDADO COM A SALA ${revelada.id}!`, cor: "#00b0ff" });
+            }
+        }
 
-        socket.on('atualizarLista',(jogadores)=>{
-            document.getElementById('lobby-list').innerHTML=jogadores.map(j=>`<div style="color:${j.id===meuId?'#00e676':'white'}">${j.nome}</div>`).join('');
-            if(jogadores.length>0&&jogadores[0].id===meuId){document.getElementById('btn-start').style.display='block';document.getElementById('lobby-msg').style.display='none';}
-            const gl=document.getElementById('game-players-list');gl.innerHTML='';
-            jogadores.forEach(p=>{
-                let d=document.createElement('div');d.className=`player-item ${p.tipo}`;d.id=`plist-${p.id}`;
-                if(!p.vivo)d.classList.add('dead');
-                let st = p.vivo ? "❤️".repeat(p.vidas) : "💀";
-                if(p.temChave) st="🔑 CHAVE";
-                if(p.temEscudo) st="🛡️ ESCUDO";
-                d.innerHTML=`<div>${p.nome}</div><div style="font-size:10px">${st}</div>`;
-                gl.appendChild(d);
-            });
-            document.getElementById('alive-txt').innerText=jogadores.filter(j=>j.vivo).length;
-        });
+        // Verifica Morte do Jogador Atual
+        if(jogador.vidas <= 0) {
+            jogador.vivo = false;
+            jogador.temChave = false;
+        }
 
-        socket.on('inicioDePartida',(d)=>{
-            document.getElementById('main-menu').style.display='none';document.getElementById('game-interface').style.display='flex';
-            renderizarGrid(d.salas);
-        });
-        socket.on('novaRodada',(d)=>{renderizarGrid(d.salas);document.getElementById('message-box').innerText=`RODADA ${d.fase}`;});
+        io.emit('salaOcupada', { idSala: idSala, jogador: jogador, efeito: sala.tipo, msg: msgExtra });
+        io.emit('atualizarLista', Object.values(jogadores));
 
-        socket.on('mudancaDeTurno',(d)=>{
-            minhaVez=(d.idJogador===meuId); clearInterval(timerVisual);
-            document.querySelectorAll('.player-item').forEach(e=>e.classList.remove('turn'));
-            if(document.getElementById(`plist-${d.idJogador}`))document.getElementById(`plist-${d.idJogador}`).classList.add('turn');
-            let t=d.tempo; document.getElementById('timer-txt').innerText=t;
-            let msg=document.getElementById('message-box');
-            if(minhaVez){msg.innerText="SUA VEZ!";msg.style.color="var(--neon-green)";document.getElementById('timer-txt').style.color="var(--neon-green)";}
-            else{msg.innerText=`VEZ DE ${d.nome}`;msg.style.color="white";document.getElementById('timer-txt').style.color="var(--neon-gold)";}
-            timerVisual=setInterval(()=>{t--;document.getElementById('timer-txt').innerText=t;if(t<=0)clearInterval(timerVisual);},1000);
-        });
+        turnoIndex++;
+        setTimeout(processarProximoTurno, 1000);
+    }
+}
 
-        socket.on('salaOcupada',(d)=>{
-            clearInterval(timerVisual);document.getElementById('timer-txt').innerText="--";
-            let b=document.getElementById(`room-${d.idSala}`);
-            b.classList.add('taken');
-            let c='#555'; if(d.jogador.tipo==='p1')c='var(--neon-green)';if(d.jogador.tipo==='p2')c='var(--neon-blue)';if(d.jogador.tipo==='p3')c='var(--neon-purple)';if(d.jogador.tipo==='p4')c='var(--neon-gold)';
-            b.style.borderColor=c;
-            document.getElementById(`name-${d.idSala}`).innerText=d.jogador.nome;
-            let ic=document.getElementById(`icon-${d.idSala}`);
+function faseExplosao() {
+    if(!jogoAndando) return;
+    
+    // Mata 1 sem chave
+    let alvos = ordemTurno.filter(j => j.vivo && j.sala && !j.temChave);
+    
+    if(alvos.length > 0) {
+        let vitima = alvos[Math.floor(Math.random() * alvos.length)];
+        vitima.vivo = false;
+        vitima.vidas = 0;
+        io.emit('efeitoExplosao', { idSala: vitima.sala, nome: vitima.nome });
+        io.emit('mensagem', { texto: `💥 ${vitima.nome} FOI PEGO PELO ASSASSINO!`, cor: "red" });
+    } else {
+        io.emit('mensagem', { texto: "ASSASSINO NÃO ACHOU NINGUÉM!", cor: "yellow" });
+    }
+
+    io.emit('atualizarLista', Object.values(jogadores));
+    
+    let vivos = Object.values(jogadores).filter(j => j.vivo);
+    
+    setTimeout(() => {
+        if(vivos.length <= 1) {
+            jogoAndando = false;
+            let campeao = vivos[0] ? vivos[0] : { nome: "NINGUÉM", tipo: "bot" };
             
-            if(d.efeito==='gas'){b.classList.add('gas');ic.innerText='☠️';SFX.gas();}
-            else if(d.efeito==='vida'){b.classList.add('life');ic.innerText='🟢';SFX.life();}
-            else if(d.efeito==='chave'){b.classList.add('key');ic.innerText='🔑';SFX.key();}
-            else if(d.efeito==='escudo'){b.classList.add('escudo');ic.innerText='🛡️';SFX.key();}
-            else if(d.efeito==='sabotagem'){b.classList.add('sabotagem');ic.innerText='💣';SFX.gas();}
-            else if(d.efeito==='aposta'){b.classList.add('aposta');ic.innerText='🎲';SFX.key();}
-            else if(d.efeito==='radar'){b.classList.add('radar');ic.innerText='📡';SFX.key();}
-            else{ic.innerText='😐';SFX.click();}
-            
-            if(d.msg) document.getElementById('message-box').innerText += d.msg;
-        });
-
-        socket.on('mensagem',(d)=>{let b=document.getElementById('message-box');b.innerText=d.texto;b.style.color=d.cor;});
-        socket.on('efeitoExplosao',(d)=>{let b=document.getElementById(`room-${d.idSala}`);if(b){b.classList.add('exploded');document.getElementById(`icon-${d.idSala}`).innerText='💥';SFX.explode();}});
-        socket.on('fimDeJogo',(d)=>{document.getElementById('victory-screen').style.display='flex';document.getElementById('winner-name').innerText=d.campeao.nome;SFX.win();});
-
-        function renderizarGrid(salas){
-            const g=document.getElementById('rooms-grid');g.innerHTML='';
-            let cols=window.innerWidth<600?4:5; g.style.gridTemplateColumns=`repeat(${cols}, 1fr)`;
-            salas.forEach(s=>{
-                let b=document.createElement('button');b.className='room-btn';b.id=`room-${s.id}`;
-                b.onclick=()=>{if(minhaVez)socket.emit('jogarTurno',s.id);};
-                b.innerHTML=`<div class="room-number">${s.id}</div><div class="room-content" id="icon-${s.id}">🚪</div><div class="occupant-name" id="name-${s.id}"></div>`;
-                g.appendChild(b);
-            });
+            if(campeao.nome !== "NINGUÉM") {
+                hallDaFama.unshift({ 
+                    nome: campeao.nome, 
+                    data: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})
+                });
+                if(hallDaFama.length > 5) hallDaFama.pop();
+            }
+            io.emit('fimDeJogo', { campeao: campeao });
+            io.emit('atualizarRanking', hallDaFama);
+        } else {
+            iniciarNovaRodada(vivos);
         }
-    </script>
-</body>
-</html>
+    }, 3000);
+}
+
+function iniciarNovaRodada(sobreviventes) {
+    faseAtual++;
+    sobreviventes.forEach(j => { 
+        j.temChave = false; 
+        j.sala = null;
+    });
+    
+    jogadores = {};
+    sobreviventes.forEach(j => jogadores[j.id] = j);
+    
+    let lista = Object.values(jogadores);
+    salasData = iniciarSalas(lista.length);
+    ordemTurno = lista.sort(() => Math.random() - 0.5);
+    turnoIndex = 0;
+
+    io.emit('novaRodada', { fase: faseAtual, salas: salasData, jogadores: lista });
+    setTimeout(processarProximoTurno, 1000);
+}
+
+// === CONEXÃO ===
+io.on('connection', (socket) => {
+    atualizarContadorOnline();
+    socket.emit('atualizarRanking', hallDaFama);
+    socket.emit('configAtual', gameConfig);
+
+    socket.on('adminLogin', (s) => socket.emit('adminLogado', s === 'admin'));
+
+    socket.on('adminSalvarConfig', (nova) => {
+        if(nova.maxJogadores) gameConfig.maxJogadores = parseInt(nova.maxJogadores);
+        if(nova.vidasIniciais) gameConfig.vidasIniciais = parseInt(nova.vidasIniciais);
+        if(nova.velocidadeBot) gameConfig.velocidadeBot = parseInt(nova.velocidadeBot);
+        if(nova.fatorPortas) gameConfig.fatorPortas = parseFloat(nova.fatorPortas);
+        io.emit('mensagem', { texto: "⚙️ NOVAS REGRAS APLICADAS!", cor: "#00e676" });
+    });
+
+    socket.on('adminZerarRank', () => { hallDaFama = []; io.emit('atualizarRanking', hallDaFama); });
+
+    socket.on('entrar', (dados) => {
+        jogadores[socket.id] = {
+            id: socket.id, nome: dados.nome, tipo: dados.tipo,
+            vidas: gameConfig.vidasIniciais, temChave: false, sala: null, vivo: true, ehBot: false
+        };
+        io.emit('atualizarLista', Object.values(jogadores));
+    });
+
+    socket.on('iniciarJogo', () => {
+        if(jogoAndando) return;
+        let lista = Object.values(jogadores);
+        let qtdFaltante = gameConfig.maxJogadores - lista.length;
+        if(qtdFaltante < 0) qtdFaltante = 0;
+
+        for(let i=1; i<=qtdFaltante; i++) {
+            let idBot = `bot-${Date.now()}-${i}`;
+            jogadores[idBot] = {
+                id: idBot, nome: `Bot ${i}`, tipo: 'bot',
+                vidas: gameConfig.vidasIniciais, temChave: false, sala: null, vivo: true, ehBot: true
+            };
+        }
+        let listaCompleta = Object.values(jogadores);
+        salasData = iniciarSalas(listaCompleta.length);
+        ordemTurno = listaCompleta.sort(() => Math.random() - 0.5);
+        turnoIndex = 0;
+        jogoAndando = true;
+        faseAtual = 1;
+        io.emit('inicioDePartida', { salas: salasData, jogadores: listaCompleta });
+        setTimeout(processarProximoTurno, 1000);
+    });
+
+    socket.on('jogarTurno', (idSala) => {
+        let jogadorDaVez = ordemTurno[turnoIndex];
+        if(jogadorDaVez && jogadorDaVez.id === socket.id) {
+            resolverEntrada(idSala, socket.id);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        if(jogadores[socket.id]) { jogadores[socket.id].vivo = false; delete jogadores[socket.id]; }
+        let humanos = Object.values(jogadores).filter(j => !j.ehBot);
+        if(humanos.length === 0) { jogoAndando = false; jogadores = {}; }
+        io.emit('atualizarLista', Object.values(jogadores));
+        atualizarContadorOnline();
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => { console.log(`SERVIDOR COM CAOS: ${PORT}`); });
