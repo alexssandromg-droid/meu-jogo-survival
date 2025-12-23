@@ -32,7 +32,12 @@ function iniciarSalas(qtdJogadores) {
     let qtdPortas = Math.ceil(qtdJogadores * gameConfig.fatorPortas);
     if(qtdPortas < qtdJogadores) qtdPortas = qtdJogadores;
 
-    let conteudos = ['chave']; 
+    let conteudos = []; 
+    
+    // === MUDANÇA: MUITO MAIS CHAVES ===
+    // Garante pelo menos 3 chaves ou 15% das portas, o que for maior
+    let qtdChaves = Math.max(3, Math.floor(qtdPortas * 0.15));
+    
     let qtdGas = Math.floor(qtdPortas * 0.20);
     let qtdVida = Math.floor(qtdPortas * 0.10);
     let qtdVampiro = Math.floor(qtdPortas * 0.05);
@@ -40,6 +45,7 @@ function iniciarSalas(qtdJogadores) {
     let qtdMina = Math.floor(qtdPortas * 0.05);
     let qtdEspiao = Math.floor(qtdPortas * 0.05);
 
+    for(let i=0; i<qtdChaves; i++) conteudos.push('chave'); // Adiciona as chaves
     for(let i=0; i<qtdGas; i++) conteudos.push('gas');
     for(let i=0; i<qtdVida; i++) conteudos.push('vida');
     for(let i=0; i<qtdVampiro; i++) conteudos.push('vampiro');
@@ -94,7 +100,6 @@ function processarProximoTurno() {
 function jogadaDoBot(jogador) {
     if(!jogoAndando) return;
 
-    // Bot Assassino tenta matar
     if(jogador.role === 'assassin' && Math.random() < gameConfig.chanceBotKill) {
         let vitimas = ordemTurno.filter(j => j.vivo && j.id !== jogador.id);
         if(vitimas.length > 0) {
@@ -114,20 +119,29 @@ function jogadaDoBot(jogador) {
     }
 }
 
+// === LÓGICA DE ASSASSINATO (ATUALIZADA) ===
 function executarAssassinato(assassino, idVitima) {
     let vitima = jogadores[idVitima];
     if(vitima && vitima.vivo) {
-        vitima.vidas = 0;
-        vitima.vivo = false;
         
-        io.emit('mensagem', { texto: `🔪 ${assassino.nome} MATOU E PASSOU A FACA!`, cor: "#ff1744" });
-        io.emit('efeitoKill', { idVitima: vitima.id }); 
+        // VERIFICA SE A VÍTIMA TEM A CHAVE (PROTEÇÃO)
+        if(vitima.temChave) {
+            io.emit('mensagem', { texto: `🛡️ A CHAVE PROTEGEU ${vitima.nome} DO ASSASSINO!`, cor: "#ffd700" });
+            vitima.temChave = false; // A chave quebra
+            io.emit('efeitoDefesa', { idVitima: vitima.id }); // Efeito visual de escudo (novo)
+        } else {
+            // MATA DE VERDADE
+            vitima.vidas = 0;
+            vitima.vivo = false;
+            io.emit('mensagem', { texto: `🔪 ${assassino.nome} ELIMINOU ${vitima.nome}!`, cor: "#ff1744" });
+            io.emit('efeitoKill', { idVitima: vitima.id }); 
+        }
         
-        // Perde o cargo
+        // O Assassino perde a faca independente se matou ou se a chave bloqueou
         assassino.role = 'crew';
         if(!assassino.ehBot) io.to(assassino.id).emit('seuPapel', 'crew');
 
-        // Escolhe novo assassino
+        // Escolhe NOVO assassino
         let possiveisNovos = Object.values(jogadores).filter(j => j.vivo && j.id !== assassino.id && j.id !== vitima.id);
         
         if(possiveisNovos.length > 0) {
@@ -141,7 +155,7 @@ function executarAssassinato(assassino, idVitima) {
         io.emit('atualizarLista', Object.values(jogadores));
         
         turnoIndex++;
-        setTimeout(processarProximoTurno, 1500);
+        setTimeout(processarProximoTurno, 2000); // Pausa um pouco maior pra ler o que aconteceu
     }
 }
 
@@ -329,7 +343,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // === A CORREÇÃO ESTÁ AQUI EMBAIXO ===
     socket.on('pedirListaUpdate', () => {
         socket.emit('atualizarLista', Object.values(jogadores));
     });
@@ -344,4 +357,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR CORRIGIDO: ${PORT}`); });
+server.listen(PORT, () => { console.log(`SERVIDOR KEY SHIELD: ${PORT}`); });
