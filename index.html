@@ -177,7 +177,7 @@
                 if(souAssassino) alert("VOCÊ PERDEU A FACA!");
                 souAssassino = false;
             }
-            if(minhaVez) socket.emit('pedirListaUpdate'); // Atualiza visual na hora
+            if(minhaVez) socket.emit('pedirListaUpdate'); 
         });
 
         function matarJogador(idAlvo) {
@@ -270,6 +270,13 @@
 
         socket.on('mensagem',(d)=>{let b=document.getElementById('message-box');b.innerText=d.texto;b.style.color=d.cor;});
         socket.on('efeitoExplosao',(d)=>{let b=document.getElementById(`room-${d.idSala}`);if(b){b.classList.add('exploded');document.getElementById(`icon-${d.idSala}`).innerText='💥';SFX.explode();}});
+        
+        socket.on('efeitoDefesa',(d)=>{ 
+            let el = document.getElementById(`plist-${d.idVitima}`);
+            if(el) { el.style.backgroundColor = "gold"; setTimeout(()=>el.style.backgroundColor="#151515", 500); }
+            SFX.key();
+        });
+
         socket.on('efeitoKill',(d)=>{ 
             let el = document.getElementById(`plist-${d.idVitima}`);
             if(el) { el.style.backgroundColor = "red"; setTimeout(()=>el.style.backgroundColor="#151515", 500); }
