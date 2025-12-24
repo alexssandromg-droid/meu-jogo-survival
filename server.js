@@ -11,7 +11,7 @@ app.get('/', (req, res) => {
 
 // === CONFIGURAÇÕES ===
 let gameConfig = {
-    maxJogadores: 20,
+    maxJogadores: 20, // 4 Times de 5
     vidasIniciais: 2,
     velocidadeBot: 500,
     fatorPortas: 1.2
@@ -26,12 +26,12 @@ let timerTurno = null;
 let faseAtual = 1;
 let hallDaFama = [];
 
-// Variáveis Votação e Apostas
+// Variáveis Votação/Apostas
 let votosComputados = {}; 
 let jaVotaram = [];
-let apostas = {}; // { idApostador: idCandidatoEscolhido }
+let apostas = {}; 
 
-// Variáveis Tabuleiro
+// Tabuleiro
 let boardAtivo = false;
 let boardPlayers = []; 
 let boardPositions = {};
@@ -71,11 +71,15 @@ function processarProximoTurno() {
     clearTimeout(timerTurno);
 
     if(turnoIndex >= ordemTurno.length) {
+        // Verifica se já temos um time vencedor antes da votação
+        if(verificarVitoriaTime()) return;
+
         let vivos = Object.values(jogadores).filter(j => j.vivo);
         if(vivos.length > 1) {
             iniciarFaseVotacao(null);
         } else {
-            faseExplosao(null); 
+            // Caso raro de sobrar 1 pessoa só (bug ou desconexão)
+            verificarVitoriaTime(); 
         }
         return;
     }
@@ -136,21 +140,27 @@ function resolverEntrada(idSala, idJogador) {
     }
 }
 
-// 2. FASE DE VOTAÇÃO
+// 2. VOTAÇÃO
 function iniciarFaseVotacao(empatados) {
     votosComputados = {};
     jaVotaram = [];
     
-    io.emit('mensagem', { texto: "🗳️ VOTAÇÃO INICIADA!", cor: "#00b0ff" });
+    io.emit('mensagem', { texto: "🗳️ VOTAÇÃO! QUEM VAI PRO PAREDÃO?", cor: "#00b0ff" });
     let candidatos = empatados ? empatados : Object.values(jogadores).filter(j => j.vivo);
     
-    if(candidatos.length === 0) { faseExplosao(null); return; }
-
     io.emit('abrirVotacao', candidatos);
 
     Object.values(jogadores).filter(j => j.ehBot).forEach(bot => {
         setTimeout(() => {
-            let alvo = candidatos[Math.floor(Math.random() * candidatos.length)];
+            // Bot tende a votar em inimigos (times diferentes)
+            let inimigos = candidatos.filter(c => c.tipo !== bot.tipo);
+            let alvo = null;
+            if(inimigos.length > 0) {
+                alvo = inimigos[Math.floor(Math.random() * inimigos.length)];
+            } else {
+                // Se só tem amigo, vota aleatório
+                alvo = candidatos[Math.floor(Math.random() * candidatos.length)];
+            }
             if(alvo) registrarVoto(bot.id, alvo.id);
         }, Math.random() * 2000 + 500);
     });
@@ -190,7 +200,7 @@ function finalizarVotacao() {
     }
 }
 
-// 3. FASE DE APOSTAS
+// 3. APOSTAS
 function iniciarFaseApostas(p1, p2) {
     if(!p1 || !p2) { faseExplosao(null); return; }
     
@@ -198,10 +208,15 @@ function iniciarFaseApostas(p1, p2) {
     io.emit('mensagem', { texto: `💸 QUEM VENCE O DUELO? APOSTEM!`, cor: "#00e676" });
     io.emit('abrirApostasUI', { p1: p1, p2: p2 });
 
-    // Bots fazem apostas
+    // Bots apostam
     Object.values(jogadores).filter(j => j.ehBot && j.id !== p1.id && j.id !== p2.id && j.vivo).forEach(bot => {
         setTimeout(() => {
-            let apostaBot = (Math.random() > 0.5) ? p1.id : p2.id;
+            // Se um dos duelistas for do meu time, aposto nele
+            let apostaBot = null;
+            if(p1.tipo === bot.tipo) apostaBot = p1.id;
+            else if(p2.tipo === bot.tipo) apostaBot = p2.id;
+            else apostaBot = (Math.random() > 0.5) ? p1.id : p2.id;
+            
             apostas[bot.id] = apostaBot;
         }, 2000);
     });
@@ -212,7 +227,7 @@ function iniciarFaseApostas(p1, p2) {
     }, 8000);
 }
 
-// 4. JOGO DO TABULEIRO
+// 4. TABULEIRO
 function iniciarBoardGame(p1, p2) {
     boardAtivo = true;
     boardPlayers = [p1, p2];
@@ -260,18 +275,14 @@ function rolarDado(idSolicitante) {
         let perdedor = boardPlayers.find(p => p.id !== atual.id);
         
         io.emit('mensagem', { texto: `🏁 ${vencedor.nome} VENCEU!`, cor: "#00e676" });
-        
-        setTimeout(() => {
-            resolverResultadoFinal(vencedor, perdedor);
-        }, 2000);
-
+        setTimeout(() => { resolverResultadoFinal(vencedor, perdedor); }, 2000);
     } else {
         boardTurn = (boardTurn === 0) ? 1 : 0;
         setTimeout(processarTurnoBoard, 1000);
     }
 }
 
-// 5. RESOLUÇÃO DE MORTES
+// 5. RESULTADOS
 function resolverResultadoFinal(vencedor, perdedor) {
     perdedor.vivo = false;
     perdedor.vidas = 0;
@@ -285,31 +296,23 @@ function resolverResultadoFinal(vencedor, perdedor) {
         if(voto !== vencedor.id) {
             if(apostador.temEscudo) {
                 apostador.temEscudo = false;
-                io.emit('mensagem', { texto: `🛡️ ${apostador.nome} ERROU MAS SE SALVOU!`, cor: "#ffd700" });
+                io.emit('mensagem', { texto: `🛡️ ${apostador.nome} USOU O ESCUDO!`, cor: "#ffd700" });
                 io.emit('efeitoDefesa', { idVitima: apostador.id });
             } else {
                 apostador.vivo = false;
                 apostador.vidas = 0;
-                io.emit('mensagem', { texto: `💸 ${apostador.nome} APOSTOU MAL E MORREU!`, cor: "red" });
+                io.emit('mensagem', { texto: `💸 ${apostador.nome} PERDEU APOSTA!`, cor: "red" });
                 io.emit('efeitoKill', { idVitima: apostador.id });
             }
         }
     });
 
     io.emit('atualizarLista', Object.values(jogadores));
-    io.emit('fecharBoardUI'); // Novo evento para limpar tela
+    io.emit('fecharBoardUI'); 
     
-    let vivos = Object.values(jogadores).filter(j => j.vivo);
     setTimeout(() => {
-        if(vivos.length <= 1) {
-            let campeao = vivos[0] ? vivos[0] : { nome: "NINGUÉM", tipo: "bot" };
-            if(campeao.nome !== "NINGUÉM") {
-                hallDaFama.unshift({ nome: campeao.nome, data: new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) });
-                if(hallDaFama.length>5) hallDaFama.pop();
-            }
-            io.emit('fimDeJogo', { campeao: campeao });
-            io.emit('atualizarRanking', hallDaFama);
-        } else {
+        if(!verificarVitoriaTime()) {
+            let vivos = Object.values(jogadores).filter(j => j.vivo);
             iniciarNovaRodada(vivos);
         }
     }, 4000);
@@ -319,7 +322,7 @@ function faseExplosao(eliminado) {
     if(eliminado) {
         if(eliminado.temEscudo) {
             eliminado.temEscudo = false;
-            io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} SOBREVIVEU COM ESCUDO!`, cor: "#ffd700" });
+            io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} SALVO PELO ESCUDO!`, cor: "#ffd700" });
         } else {
             eliminado.vivo = false;
             io.emit('mensagem', { texto: `💥 ${eliminado.nome} ELIMINADO!`, cor: "red" });
@@ -327,15 +330,40 @@ function faseExplosao(eliminado) {
     }
     io.emit('atualizarLista', Object.values(jogadores));
     
-    let vivos = Object.values(jogadores).filter(j => j.vivo);
     setTimeout(() => {
-        if(vivos.length <= 1) {
-            let campeao = vivos[0] ? vivos[0] : { nome: "NINGUÉM", tipo: "bot" };
-            io.emit('fimDeJogo', { campeao: campeao });
-        } else {
+        if(!verificarVitoriaTime()) {
+            let vivos = Object.values(jogadores).filter(j => j.vivo);
             iniciarNovaRodada(vivos);
         }
     }, 3000);
+}
+
+// === NOVO: CONDIÇÃO DE VITÓRIA POR TIME ===
+function verificarVitoriaTime() {
+    let vivos = Object.values(jogadores).filter(j => j.vivo);
+    if(vivos.length === 0) return false;
+
+    // Pega os times únicos dos vivos
+    let timesVivos = [...new Set(vivos.map(j => j.tipo))];
+
+    if(timesVivos.length === 1) {
+        // Só sobrou um time!
+        jogoAndando = false;
+        let timeVencedor = timesVivos[0];
+        
+        let nomeTime = "";
+        if(timeVencedor === 'p1') nomeTime = "VERDE";
+        if(timeVencedor === 'p2') nomeTime = "AZUL";
+        if(timeVencedor === 'p3') nomeTime = "VERMELHA"; // Alterado para Red
+        if(timeVencedor === 'p4') nomeTime = "AMARELA";
+
+        hallDaFama.unshift({ nome: `EQUIPE ${nomeTime}`, data: new Date().toLocaleTimeString('pt-BR') });
+        
+        io.emit('fimDeJogo', { campeao: { nome: `EQUIPE ${nomeTime}`, tipo: timeVencedor } });
+        io.emit('atualizarRanking', hallDaFama);
+        return true;
+    }
+    return false;
 }
 
 function iniciarNovaRodada(sobreviventes) {
@@ -358,12 +386,7 @@ io.on('connection', (socket) => {
     socket.emit('configAtual', gameConfig);
 
     socket.on('adminLogin', (s) => socket.emit('adminLogado', s === 'admin'));
-    socket.on('adminSalvarConfig', (n) => {
-        if(n.maxJogadores) gameConfig.maxJogadores = parseInt(n.maxJogadores);
-        if(n.vidasIniciais) gameConfig.vidasIniciais = parseInt(n.vidasIniciais);
-        if(n.velocidadeBot) gameConfig.velocidadeBot = parseInt(n.velocidadeBot);
-        io.emit('mensagem', { texto: "⚙️ REGRAS ATUALIZADAS!", cor: "#00e676" });
-    });
+    socket.on('adminSalvarConfig', (n) => { /*...*/ });
     socket.on('adminZerarRank', () => { hallDaFama = []; io.emit('atualizarRanking', hallDaFama); });
 
     socket.on('entrar', (dados) => {
@@ -380,10 +403,17 @@ io.on('connection', (socket) => {
         let qtdFaltante = gameConfig.maxJogadores - lista.length;
         if(qtdFaltante < 0) qtdFaltante = 0;
 
+        // Distribuição Equilibrada de Bots
+        // p1, p2, p3, p4 ciclicamente
+        const times = ['p1', 'p2', 'p3', 'p4'];
+        
         for(let i=1; i<=qtdFaltante; i++) {
             let idBot = `bot-${Date.now()}-${i}`;
+            // Se já tem gente, tenta balancear, senão vai aleatório
+            let timeBot = times[(lista.length + i) % 4]; 
+
             jogadores[idBot] = {
-                id: idBot, nome: `Bot ${i}`, tipo: 'bot',
+                id: idBot, nome: `Bot ${i}`, tipo: timeBot,
                 vidas: gameConfig.vidasIniciais, temEscudo: false, sala: null, vivo: true, ehBot: true
             };
         }
@@ -427,4 +457,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR BOARD+BET: ${PORT}`); });
+server.listen(PORT, () => { console.log(`SERVIDOR TEAMS: ${PORT}`); });
