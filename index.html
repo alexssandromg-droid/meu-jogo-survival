@@ -1,460 +1,306 @@
-const express = require('express');
-const app = express();
-const http = require('http');
-const server = http.createServer(app);
-const { Server } = require("socket.io");
-const io = new Server(server);
-
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/index.html');
-});
-
-// === CONFIGURAÇÕES ===
-let gameConfig = {
-    maxJogadores: 20, // 4 Times de 5
-    vidasIniciais: 2,
-    velocidadeBot: 500,
-    fatorPortas: 1.2
-};
-
-let jogadores = {}; 
-let salasData = [];
-let jogoAndando = false;
-let ordemTurno = [];
-let turnoIndex = 0;
-let timerTurno = null;
-let faseAtual = 1;
-let hallDaFama = [];
-
-// Variáveis Votação/Apostas
-let votosComputados = {}; 
-let jaVotaram = [];
-let apostas = {}; 
-
-// Tabuleiro
-let boardAtivo = false;
-let boardPlayers = []; 
-let boardPositions = {};
-let boardTurn = 0; 
-const BOARD_SIZE = 20;
-
-// === AUXILIARES ===
-function iniciarSalas(qtdJogadores) {
-    let qtdPortas = Math.ceil(qtdJogadores * gameConfig.fatorPortas);
-    if(qtdPortas < qtdJogadores) qtdPortas = qtdJogadores;
-
-    let conteudos = [];
-    let qtdEscudo = Math.max(2, Math.floor(qtdPortas * 0.20)); 
-    let qtdVida = Math.floor(qtdPortas * 0.10);
-    let qtdGas = Math.floor(qtdPortas * 0.10); 
-
-    for(let i=0; i<qtdEscudo; i++) conteudos.push('escudo');
-    for(let i=0; i<qtdVida; i++) conteudos.push('vida');
-    for(let i=0; i<qtdGas; i++) conteudos.push('gas');
-    
-    while(conteudos.length < qtdPortas) { conteudos.push('vazio'); }
-    conteudos.sort(() => Math.random() - 0.5);
-
-    return conteudos.map((tipo, index) => ({
-        id: index + 1, tipo: tipo, ocupante: null, bloqueada: false
-    }));
-}
-
-function atualizarContadorOnline() {
-    io.emit('jogadoresOnline', io.engine.clientsCount);
-}
-
-// === FLUXO DO JOGO ===
-
-function processarProximoTurno() {
-    if(!jogoAndando || boardAtivo) return;
-    clearTimeout(timerTurno);
-
-    if(turnoIndex >= ordemTurno.length) {
-        // Verifica se já temos um time vencedor antes da votação
-        if(verificarVitoriaTime()) return;
-
-        let vivos = Object.values(jogadores).filter(j => j.vivo);
-        if(vivos.length > 1) {
-            iniciarFaseVotacao(null);
-        } else {
-            // Caso raro de sobrar 1 pessoa só (bug ou desconexão)
-            verificarVitoriaTime(); 
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Survival Royale: TEAMS</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* CORES DOS TIMES */
+            --team-green: #00e676;
+            --team-blue: #00b0ff;
+            --team-red: #ff1744;
+            --team-yellow: #ffea00;
+            --bg-dark: #050505;
         }
-        return;
-    }
+        body { background-color: var(--bg-dark); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; height: 100vh; overflow: hidden; user-select: none; display: flex; flex-direction: column; }
 
-    let jogadorAtual = ordemTurno[turnoIndex];
-    if(!jogadorAtual || !jogadorAtual.vivo) {
-        turnoIndex++;
-        processarProximoTurno();
-        return;
-    }
+        /* ESTILOS DOS JOGADORES NA LISTA */
+        .player-item { background: #151515; padding: 8px; margin-bottom: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid transparent; }
+        .player-item.p1 { border-left-color: var(--team-green); } 
+        .player-item.p2 { border-left-color: var(--team-blue); }
+        .player-item.p3 { border-left-color: var(--team-red); } 
+        .player-item.p4 { border-left-color: var(--team-yellow); }
+        .player-item.turn { background: #333; border-right: 3px solid white; }
+        .player-item.dead { text-decoration: line-through; opacity: 0.4; }
 
-    io.emit('mudancaDeTurno', { 
-        idJogador: jogadorAtual.id, nome: jogadorAtual.nome, tempo: 10
-    });
+        /* APOSTA MODAL */
+        #betting-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.95); z-index: 1000; flex-direction: column; justify-content: center; align-items: center; }
+        .bet-container { display: flex; gap: 30px; }
+        .bet-btn { width: 150px; height: 150px; background: #222; border: 4px solid #555; border-radius: 10px; color: white; font-size: 20px; font-weight: bold; cursor: pointer; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: 0.3s; }
+        .bet-btn:hover { transform: scale(1.1); background: #333; }
+        .bet-btn.selected { background: white; color: black; border-color: gold; }
 
-    if(jogadorAtual.ehBot) {
-        timerTurno = setTimeout(() => { jogadaDoBot(jogadorAtual); }, gameConfig.velocidadeBot);
-    } else {
-        timerTurno = setTimeout(() => {
-            io.emit('mensagem', { texto: `${jogadorAtual.nome} DORMIU!`, cor: "red" });
-            jogadaDoBot(jogadorAtual);
-        }, 10000);
-    }
-}
+        /* TABULEIRO */
+        #board-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; z-index: 2000; flex-direction: column; justify-content: flex-start; align-items: center; padding-top: 20px; }
+        .board-track { display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; max-width: 90%; margin-top: 20px; }
+        .board-cell { width: 40px; height: 40px; border: 1px solid #444; background: #222; display: flex; justify-content: center; align-items: center; font-size: 12px; color: #555; position: relative; }
+        .board-cell.trap { border-color: red; background: #330000; }
+        .board-cell.finish { border-color: gold; background: #333300; }
+        .p-token { width: 20px; height: 20px; border-radius: 50%; position: absolute; box-shadow: 0 0 5px black; font-size: 10px; display:flex; justify-content:center; align-items:center; color:black; font-weight:bold; }
+        
+        #dice-btn { font-size: 50px; background: none; border: 2px solid white; color: white; border-radius: 10px; width: 100px; height: 100px; cursor: pointer; margin-top:20px; }
+        #dice-btn:disabled { opacity: 0.3; }
 
-function jogadaDoBot(jogador) {
-    let salasLivres = salasData.filter(s => !s.bloqueada);
-    if(salasLivres.length > 0) {
-        let escolha = salasLivres[Math.floor(Math.random() * salasLivres.length)];
-        resolverEntrada(escolha.id, jogador.id);
-    } else {
-        turnoIndex++;
-        processarProximoTurno();
-    }
-}
+        /* VOTAÇÃO */
+        #voting-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.98); z-index: 999; flex-direction: column; justify-content: center; align-items: center; }
+        .vote-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 800px; padding: 10px; max-height: 60vh; overflow-y: auto;}
+        .vote-btn { background: #222; border: 2px solid #555; color: white; padding: 15px; border-radius: 8px; cursor: pointer; width: 100%; text-transform: uppercase; }
+        .vote-btn:hover { background: #444; border-color: white; }
 
-function resolverEntrada(idSala, idJogador) {
-    let sala = salasData.find(s => s.id === idSala);
-    let jogador = jogadores[idJogador];
+        /* GERAL */
+        #btn-admin-toggle { position: absolute; top: 20px; left: 20px; background: none; border: none; font-size: 24px; cursor: pointer; color: #333; z-index: 300; }
+        .online-badge { position: absolute; top: 20px; right: 20px; background: #111; border: 1px solid #333; padding: 5px 15px; border-radius: 20px; color: var(--team-green); font-size: 14px; }
+        
+        #admin-panel { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 400; flex-direction: column; justify-content: center; align-items: center; }
+        .admin-card { background: #1a1a1a; padding: 20px; border: 1px solid white; border-radius: 10px; width: 300px; }
+        .admin-row { margin-bottom: 10px; }
+        .admin-row input, .admin-row select { width: 100%; padding: 5px; background: #000; border: 1px solid #444; color: white; box-sizing: border-box; }
+        .btn-admin { padding: 10px; width: 100%; cursor: pointer; margin-top:5px; }
 
-    if(sala && !sala.bloqueada && jogador) {
-        clearTimeout(timerTurno);
-        sala.bloqueada = true;
-        sala.ocupante = jogador.nome;
-        jogador.sala = idSala;
+        #main-menu { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 200; }
+        .logo-title { font-size: 60px; color: white; margin-bottom: 20px; text-shadow: 0 0 10px var(--team-blue); }
+        .menu-card { background: rgba(20, 20, 20, 0.9); padding: 30px; border-radius: 15px; border: 1px solid #333; width: 300px; text-align: center; }
+        .btn-large { padding: 15px; width: 100%; font-size: 20px; font-weight: bold; background: var(--team-green); color: black; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+        input[type="text"], select { padding: 15px; background: #000; border: 1px solid #444; color: white; font-size: 18px; text-align: center; border-radius: 8px; outline: none; width: 100%; margin-bottom: 10px; box-sizing: border-box; }
 
-        if(sala.tipo === 'gas') jogador.vidas -= 1;
-        else if(sala.tipo === 'vida') jogador.vidas += 1;
-        else if(sala.tipo === 'escudo') jogador.temEscudo = true;
+        #game-interface { display: none; width: 100%; height: 100%; flex-direction: column; }
+        #header { height: 60px; background: #111; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
+        #main-container { display: flex; flex: 1; overflow: hidden; }
+        #sidebar { width: 250px; background: #0a0a0a; border-right: 1px solid #222; overflow-y: auto; padding: 10px; }
+        #game-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #rooms-grid { display: grid; gap: 10px; padding: 20px; max-width: 800px; width: 100%; max-height: 80vh; overflow-y: auto; }
 
-        if(jogador.vidas <= 0) jogador.vivo = false;
+        .room-btn { aspect-ratio: 1; background: #1e1e1e; border: 1px solid #333; border-radius: 8px; color: #555; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: 0.1s; }
+        .room-btn:hover { border-color: #777; }
+        .room-btn.taken { opacity: 0.5; cursor: not-allowed; }
+        .room-btn.gas { background: #2e1e05; border-color: red; }
+        .room-btn.vida { background: #052e05; border-color: green; }
+        .room-btn.escudo { background: #002233; border-color: blue; }
+        .room-content { font-size: 30px; }
+        .room-number { position: absolute; top: 5px; left: 8px; font-weight: bold; font-size: 14px; opacity: 0.5; }
+        .occupant-name { font-size: 12px; margin-top: 5px; color: #aaa; font-weight: bold; }
 
-        io.emit('salaOcupada', { idSala: idSala, jogador: jogador, efeito: sala.tipo });
-        io.emit('atualizarLista', Object.values(jogadores));
+        #message-box { font-size: 24px; font-weight: bold; margin-bottom: 10px; height: 35px; text-shadow: 0 2px 10px black; }
+        #victory-screen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
+    </style>
+</head>
+<body>
 
-        turnoIndex++;
-        setTimeout(processarProximoTurno, 600);
-    }
-}
+    <button id="btn-admin-toggle" onclick="abrirAdmin()">⚙️</button>
+    <div class="online-badge">ONLINE: <span id="online-count">1</span></div>
 
-// 2. VOTAÇÃO
-function iniciarFaseVotacao(empatados) {
-    votosComputados = {};
-    jaVotaram = [];
-    
-    io.emit('mensagem', { texto: "🗳️ VOTAÇÃO! QUEM VAI PRO PAREDÃO?", cor: "#00b0ff" });
-    let candidatos = empatados ? empatados : Object.values(jogadores).filter(j => j.vivo);
-    
-    io.emit('abrirVotacao', candidatos);
+    <div id="betting-modal">
+        <div class="bet-title">APOSTE NO VENCEDOR</div>
+        <div class="bet-container">
+            <div class="bet-btn" id="bet-p1" onclick="apostar(1)"><span id="name-p1">P1</span></div>
+            <div style="font-size:30px; color:white; align-self:center;">VS</div>
+            <div class="bet-btn" id="bet-p2" onclick="apostar(2)"><span id="name-p2">P2</span></div>
+        </div>
+        <div style="margin-top:20px; color:#ff1744;">ERROU A APOSTA = MORTE (SE SEM ESCUDO)</div>
+    </div>
 
-    Object.values(jogadores).filter(j => j.ehBot).forEach(bot => {
-        setTimeout(() => {
-            // Bot tende a votar em inimigos (times diferentes)
-            let inimigos = candidatos.filter(c => c.tipo !== bot.tipo);
-            let alvo = null;
-            if(inimigos.length > 0) {
-                alvo = inimigos[Math.floor(Math.random() * inimigos.length)];
-            } else {
-                // Se só tem amigo, vota aleatório
-                alvo = candidatos[Math.floor(Math.random() * candidatos.length)];
+    <div id="board-overlay">
+        <h2 style="color:gold; margin:0;">DUELO FINAL</h2>
+        <div id="board-msg">VS</div>
+        <div class="board-track" id="board-track"></div>
+        <div id="dice-area">
+            <button id="dice-btn" onclick="rolarDado()">🎲</button>
+        </div>
+    </div>
+
+    <div id="voting-modal">
+        <div style="font-size:30px; color:white; margin-bottom:10px;">QUEM VAI PRO PAREDÃO?</div>
+        <div class="vote-grid" id="vote-list"></div>
+        <div style="margin-top:10px; color:#aaa;" id="vote-status">Aguardando...</div>
+    </div>
+
+    <div id="admin-panel">
+        <div class="admin-card">
+            <h2 style="color:white; margin:0;">ADMIN</h2>
+            <div id="admin-login-area">
+                <div class="admin-row"><label>Senha:</label><input type="password" id="admin-pass"></div>
+                <button class="btn-admin" onclick="tentarLoginAdmin()">ENTRAR</button>
+                <button class="btn-admin" onclick="fecharAdmin()">FECHAR</button>
+            </div>
+            <div id="admin-controls" style="display:none;">
+                <div class="admin-row"><label>Max Jogadores:</label><input type="number" id="conf-max" value="20"></div>
+                <button class="btn-admin" onclick="salvarConfig()">SALVAR</button>
+                <button class="btn-admin" onclick="zerarRank()">ZERAR RANK</button>
+                <button class="btn-admin" onclick="fecharAdmin()">FECHAR</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="main-menu">
+        <div class="logo-title">SURVIVAL TEAMS</div>
+        <div class="menu-card" id="login-step">
+            <h3 style="margin:0 0 20px 0; color:#aaa;">ENTRAR</h3>
+            <input type="text" id="my-name" placeholder="NICKNAME" maxlength="12">
+            <select id="my-color">
+                <option value="p1">Equipe Verde</option>
+                <option value="p2">Equipe Azul</option>
+                <option value="p3">Equipe Vermelha</option>
+                <option value="p4">Equipe Amarela</option>
+            </select>
+            <button class="btn-large" onclick="entrarNoLobby()">JOGAR</button>
+            <div class="hall-fama-container" style="margin-top:20px;">
+                <div style="color:gold;">🏆 VENCEDORES</div>
+                <div id="rank-list-ui"></div>
+            </div>
+        </div>
+        <div class="menu-card" id="lobby-step" style="display:none;">
+            <h3>SALA DE ESPERA</h3>
+            <div id="lobby-list" style="background:#000; padding:10px; height:100px; overflow-y:auto;"></div>
+            <button id="btn-start" class="btn-large" style="background:gold; display:none;" onclick="iniciarJogo()">INICIAR</button>
+            <div id="lobby-msg">Aguardando Host...</div>
+        </div>
+    </div>
+
+    <div id="game-interface">
+        <div id="header">
+            <button onclick="location.reload()">SAIR</button>
+            <div id="timer-txt" style="color:gold; font-size:20px; font-weight:bold;">--</div>
+            <div>VIVOS: <span id="alive-txt">0</span></div>
+        </div>
+        <div id="main-container">
+            <div id="sidebar"><div id="game-players-list"></div></div>
+            <div id="game-area"><div id="message-box"></div><div id="rooms-grid"></div></div>
+        </div>
+    </div>
+
+    <div id="victory-screen">
+        <h1 style="color:gold; font-size:50px;">VENCEDOR</h1>
+        <h2 id="winner-name" style="color:white;">-</h2>
+        <button class="btn-large" style="width:200px;" onclick="location.reload()">VOLTAR</button>
+    </div>
+
+    <script>
+        const socket = io();
+        let meuId=null, minhaVez=false; timerVisual=null; let apostaP1Id=null, apostaP2Id=null;
+        const SFX={click:()=>playTone(600,'sine',0.1),dice:()=>playTone(400,'square',0.1),win:()=>playTone(600,'sine',0.6)};
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playTone(f,t,d){if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type=t;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.01,audioCtx.currentTime+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d);}
+
+        function abrirAdmin(){document.getElementById('admin-panel').style.display='flex';}
+        function fecharAdmin(){document.getElementById('admin-panel').style.display='none';}
+        function tentarLoginAdmin(){socket.emit('adminLogin',document.getElementById('admin-pass').value);}
+        socket.on('adminLogado',(ok)=>{if(ok){document.getElementById('admin-login-area').style.display='none';document.getElementById('admin-controls').style.display='block';}});
+        function salvarConfig(){socket.emit('adminSalvarConfig',{maxJogadores:document.getElementById('conf-max').value});fecharAdmin();}
+        function zerarRank(){socket.emit('adminZerarRank');}
+
+        socket.on('connect',()=>{meuId=socket.id;});
+        socket.on('jogadoresOnline',(n)=>document.getElementById('online-count').innerText=n);
+        socket.on('atualizarRanking',(l)=>{document.getElementById('rank-list-ui').innerHTML=l.map(r=>`<div>${r.nome}</div>`).join('');});
+
+        function entrarNoLobby(){
+            socket.emit('entrar',{nome:document.getElementById('my-name').value,tipo:document.getElementById('my-color').value});
+            document.getElementById('login-step').style.display='none';document.getElementById('lobby-step').style.display='block';
+            SFX.click();
+        }
+        function iniciarJogo(){socket.emit('iniciarJogo');}
+
+        socket.on('atualizarLista',(jogadores)=>{
+            document.getElementById('lobby-list').innerHTML=jogadores.map(j=>`<div style="color:${j.id===meuId?'lime':'white'}">${j.nome}</div>`).join('');
+            if(jogadores.length>0&&jogadores[0].id===meuId){document.getElementById('btn-start').style.display='block';document.getElementById('lobby-msg').style.display='none';}
+            const gl=document.getElementById('game-players-list');gl.innerHTML='';
+            jogadores.forEach(p=>{
+                let d=document.createElement('div');d.className=`player-item ${p.tipo}`;d.id=`plist-${p.id}`;
+                if(!p.vivo)d.classList.add('dead');
+                let st = p.vivo ? "❤️".repeat(p.vidas) : "💀";
+                if(p.temEscudo) st = "🛡️";
+                d.innerHTML=`<div>${p.nome}</div><div>${st}</div>`;
+                gl.appendChild(d);
+            });
+            document.getElementById('alive-txt').innerText=jogadores.filter(j=>j.vivo).length;
+        });
+
+        // VOTAÇÃO
+        socket.on('abrirVotacao', (candidatos) => {
+            document.getElementById('voting-modal').style.display='flex';
+            let l=document.getElementById('vote-list');l.innerHTML='';
+            candidatos.forEach(c=>{
+                let b=document.createElement('button');b.className='vote-btn';b.innerText=c.nome;
+                b.onclick=()=>{socket.emit('enviarVoto',c.id);document.getElementById('vote-status').innerText="Voto Enviado!";document.querySelectorAll('.vote-btn').forEach(bb=>bb.disabled=true);SFX.click();};
+                l.appendChild(b);
+            });
+        });
+        socket.on('progressoVotacao',(d)=>document.getElementById('vote-status').innerText=`Votos: ${d.atual}/${d.total}`);
+        socket.on('fecharVotacao',()=>document.getElementById('voting-modal').style.display='none');
+
+        // APOSTAS
+        socket.on('abrirApostasUI',(d)=>{
+            apostaP1Id=d.p1.id; apostaP2Id=d.p2.id;
+            document.getElementById('betting-modal').style.display='flex';
+            document.getElementById('name-p1').innerText=d.p1.nome; document.getElementById('name-p2').innerText=d.p2.nome;
+            document.getElementById('bet-p1').classList.remove('selected'); document.getElementById('bet-p2').classList.remove('selected');
+        });
+        function apostar(n){ socket.emit('fazerAposta', n===1?apostaP1Id:apostaP2Id); document.getElementById(`bet-p${n}`).classList.add('selected'); SFX.click(); }
+        socket.on('fecharApostasUI',()=>document.getElementById('betting-modal').style.display='none');
+
+        // BOARD
+        let boardP1, boardP2;
+        socket.on('iniciarBoardUI',(d)=>{
+            boardP1=d.p1.id; boardP2=d.p2.id;
+            document.getElementById('board-overlay').style.display='flex';
+            document.getElementById('board-msg').innerText = `${d.p1.nome} VS ${d.p2.nome}`;
+            let t=document.getElementById('board-track');t.innerHTML='';
+            for(let i=0;i<=d.tamanho;i++){
+                let c=document.createElement('div');c.className='board-cell';c.innerText=i;
+                if(i===13||i===7)c.classList.add('trap'); if(i===d.tamanho)c.classList.add('finish');
+                let tk1=document.createElement('div');tk1.className='p-token';tk1.id=`bt-p1-${i}`;tk1.style.background='var(--team-green)';tk1.style.left='2px';tk1.style.display='none';
+                let tk2=document.createElement('div');tk2.className='p-token';tk2.id=`bt-p2-${i}`;tk2.style.background='var(--team-blue)';tk2.style.right='2px';tk2.style.display='none';
+                c.appendChild(tk1);c.appendChild(tk2);t.appendChild(c);
             }
-            if(alvo) registrarVoto(bot.id, alvo.id);
-        }, Math.random() * 2000 + 500);
-    });
-}
+            document.getElementById(`bt-p1-0`).style.display='flex';document.getElementById(`bt-p2-0`).style.display='flex';
+        });
+        socket.on('vezBoard',(d)=>{
+            let b=document.getElementById('dice-btn');
+            if(d.id===meuId){b.disabled=false;b.innerText='🎲';document.getElementById('board-msg').innerText="SUA VEZ!";}
+            else{b.disabled=true;b.innerText='⏳';document.getElementById('board-msg').innerText=`VEZ DE ${d.nome}`;}
+        });
+        function rolarDado(){socket.emit('pedirDado');SFX.click();}
+        socket.on('dadoRolado',(d)=>{
+            SFX.dice(); document.getElementById('dice-btn').innerText=d.dado;
+            let s=(d.id===boardP1)?'p1':'p2';
+            for(let i=0;i<=20;i++){let t=document.getElementById(`bt-${s}-${i}`);if(t)t.style.display='none';}
+            let n=document.getElementById(`bt-${s}-${d.pos}`);if(n)n.style.display='flex';
+        });
+        socket.on('fecharBoardUI',()=>document.getElementById('board-overlay').style.display='none');
 
-function registrarVoto(idEleitor, idAlvo) {
-    if(jaVotaram.includes(idEleitor)) return;
-    if(!votosComputados[idAlvo]) votosComputados[idAlvo] = 0;
-    votosComputados[idAlvo]++;
-    jaVotaram.push(idEleitor);
+        // GAME
+        socket.on('inicioDePartida',(d)=>{document.getElementById('main-menu').style.display='none';document.getElementById('game-interface').style.display='flex';renderGrid(d.salas);});
+        socket.on('novaRodada',(d)=>{document.getElementById('board-overlay').style.display='none';renderGrid(d.salas);document.getElementById('message-box').innerText=`RODADA ${d.fase}`;});
+        socket.on('mudancaDeTurno',(d)=>{
+            minhaVez=(d.idJogador===meuId);
+            let t=d.tempo; document.getElementById('timer-txt').innerText=t;
+            document.querySelectorAll('.player-item').forEach(e=>e.classList.remove('turn'));
+            if(document.getElementById(`plist-${d.idJogador}`))document.getElementById(`plist-${d.idJogador}`).classList.add('turn');
+            let m=document.getElementById('message-box');
+            if(minhaVez){m.innerText="SUA VEZ!";m.style.color="lime";}else{m.innerText=`VEZ DE ${d.nome}`;m.style.color="white";}
+            clearInterval(timerVisual);timerVisual=setInterval(()=>{t--;document.getElementById('timer-txt').innerText=t;if(t<=0)clearInterval(timerVisual);},1000);
+        });
+        socket.on('salaOcupada',(d)=>{
+            let b=document.getElementById(`room-${d.idSala}`);b.classList.add('taken');
+            let ico='🚪';if(d.efeito==='gas')ico='☠️';if(d.efeito==='vida')ico='❤️';if(d.efeito==='escudo')ico='🛡️';
+            b.innerHTML=`<div style="font-size:24px">${ico}</div><div style="font-size:10px">${d.jogador.nome}</div>`;
+            b.classList.add(d.efeito);
+        });
+        socket.on('mensagem',(d)=>{let m=document.getElementById('message-box');m.innerText=d.texto;m.style.color=d.cor;});
+        socket.on('fimDeJogo',(d)=>{document.getElementById('victory-screen').style.display='flex';document.getElementById('winner-name').innerText=d.campeao.nome;SFX.win();});
 
-    let totalJogadores = Object.keys(jogadores).length;
-    io.emit('progressoVotacao', { atual: jaVotaram.length, total: totalJogadores });
-
-    if(jaVotaram.length >= totalJogadores) {
-        setTimeout(finalizarVotacao, 1000);
-    }
-}
-
-function finalizarVotacao() {
-    io.emit('fecharVotacao');
-    let rankingVotos = Object.keys(votosComputados).sort((a,b) => votosComputados[b] - votosComputados[a]);
-    
-    if(rankingVotos.length === 0) {
-        io.emit('mensagem', { texto: "NINGUÉM VOTOU...", cor: "yellow" });
-        iniciarNovaRodada(Object.values(jogadores).filter(j=>j.vivo));
-        return;
-    }
-
-    let id1 = rankingVotos[0];
-    let id2 = rankingVotos[1];
-
-    if(id2) {
-        iniciarFaseApostas(jogadores[id1], jogadores[id2]);
-    } else {
-        faseExplosao(jogadores[id1]);
-    }
-}
-
-// 3. APOSTAS
-function iniciarFaseApostas(p1, p2) {
-    if(!p1 || !p2) { faseExplosao(null); return; }
-    
-    apostas = {};
-    io.emit('mensagem', { texto: `💸 QUEM VENCE O DUELO? APOSTEM!`, cor: "#00e676" });
-    io.emit('abrirApostasUI', { p1: p1, p2: p2 });
-
-    // Bots apostam
-    Object.values(jogadores).filter(j => j.ehBot && j.id !== p1.id && j.id !== p2.id && j.vivo).forEach(bot => {
-        setTimeout(() => {
-            // Se um dos duelistas for do meu time, aposto nele
-            let apostaBot = null;
-            if(p1.tipo === bot.tipo) apostaBot = p1.id;
-            else if(p2.tipo === bot.tipo) apostaBot = p2.id;
-            else apostaBot = (Math.random() > 0.5) ? p1.id : p2.id;
-            
-            apostas[bot.id] = apostaBot;
-        }, 2000);
-    });
-
-    setTimeout(() => {
-        io.emit('fecharApostasUI');
-        iniciarBoardGame(p1, p2);
-    }, 8000);
-}
-
-// 4. TABULEIRO
-function iniciarBoardGame(p1, p2) {
-    boardAtivo = true;
-    boardPlayers = [p1, p2];
-    boardPositions = {};
-    boardPositions[p1.id] = 0;
-    boardPositions[p2.id] = 0;
-    boardTurn = 0; 
-
-    io.emit('mensagem', { texto: `🎲 CORRIDA: ${p1.nome} VS ${p2.nome}`, cor: "#ff9100" });
-    io.emit('iniciarBoardUI', { p1: p1, p2: p2, tamanho: BOARD_SIZE });
-
-    processarTurnoBoard();
-}
-
-function processarTurnoBoard() {
-    if(!boardAtivo) return;
-    let atual = boardPlayers[boardTurn];
-    io.emit('vezBoard', { id: atual.id, nome: atual.nome });
-
-    if(atual.ehBot && atual.vivo) {
-        setTimeout(() => rolarDado(atual.id), 1500);
-    }
-}
-
-function rolarDado(idSolicitante) {
-    if(!boardAtivo) return;
-    let atual = boardPlayers[boardTurn];
-    if(atual.id !== idSolicitante) return;
-
-    let dado = Math.floor(Math.random() * 6) + 1;
-    let novaPos = boardPositions[atual.id] + dado;
-    let msgExtra = "";
-    
-    if(novaPos === 13) { novaPos -= 3; msgExtra = " (AZAR!)"; }
-    if(novaPos === 7) { novaPos += 2; msgExtra = " (SORTE!)"; }
-
-    if(novaPos > BOARD_SIZE) novaPos = BOARD_SIZE;
-    boardPositions[atual.id] = novaPos;
-
-    io.emit('dadoRolado', { id: atual.id, dado: dado, pos: novaPos, msg: msgExtra });
-
-    if(novaPos >= BOARD_SIZE) {
-        boardAtivo = false;
-        let vencedor = atual;
-        let perdedor = boardPlayers.find(p => p.id !== atual.id);
-        
-        io.emit('mensagem', { texto: `🏁 ${vencedor.nome} VENCEU!`, cor: "#00e676" });
-        setTimeout(() => { resolverResultadoFinal(vencedor, perdedor); }, 2000);
-    } else {
-        boardTurn = (boardTurn === 0) ? 1 : 0;
-        setTimeout(processarTurnoBoard, 1000);
-    }
-}
-
-// 5. RESULTADOS
-function resolverResultadoFinal(vencedor, perdedor) {
-    perdedor.vivo = false;
-    perdedor.vidas = 0;
-    io.emit('efeitoKill', { idVitima: perdedor.id });
-    io.emit('mensagem', { texto: `💥 ${perdedor.nome} PERDEU O DUELO!`, cor: "red" });
-
-    let listaApostadores = Object.values(jogadores).filter(j => j.vivo && j.id !== vencedor.id && j.id !== perdedor.id);
-    
-    listaApostadores.forEach(apostador => {
-        let voto = apostas[apostador.id];
-        if(voto !== vencedor.id) {
-            if(apostador.temEscudo) {
-                apostador.temEscudo = false;
-                io.emit('mensagem', { texto: `🛡️ ${apostador.nome} USOU O ESCUDO!`, cor: "#ffd700" });
-                io.emit('efeitoDefesa', { idVitima: apostador.id });
-            } else {
-                apostador.vivo = false;
-                apostador.vidas = 0;
-                io.emit('mensagem', { texto: `💸 ${apostador.nome} PERDEU APOSTA!`, cor: "red" });
-                io.emit('efeitoKill', { idVitima: apostador.id });
-            }
+        function renderGrid(salas){
+            let g=document.getElementById('rooms-grid');g.innerHTML='';
+            let cols=window.innerWidth<600?4:5; g.style.gridTemplateColumns=`repeat(${cols}, 1fr)`;
+            salas.forEach(s=>{
+                let b=document.createElement('div');b.className='room-btn';b.id=`room-${s.id}`;
+                b.onclick=()=>{if(minhaVez)socket.emit('jogarTurno',s.id);};
+                b.innerHTML=`<div style="font-size:12px;opacity:0.5">${s.id}</div><div class="room-content">🚪</div>`;
+                g.appendChild(b);
+            });
         }
-    });
-
-    io.emit('atualizarLista', Object.values(jogadores));
-    io.emit('fecharBoardUI'); 
-    
-    setTimeout(() => {
-        if(!verificarVitoriaTime()) {
-            let vivos = Object.values(jogadores).filter(j => j.vivo);
-            iniciarNovaRodada(vivos);
-        }
-    }, 4000);
-}
-
-function faseExplosao(eliminado) {
-    if(eliminado) {
-        if(eliminado.temEscudo) {
-            eliminado.temEscudo = false;
-            io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} SALVO PELO ESCUDO!`, cor: "#ffd700" });
-        } else {
-            eliminado.vivo = false;
-            io.emit('mensagem', { texto: `💥 ${eliminado.nome} ELIMINADO!`, cor: "red" });
-        }
-    }
-    io.emit('atualizarLista', Object.values(jogadores));
-    
-    setTimeout(() => {
-        if(!verificarVitoriaTime()) {
-            let vivos = Object.values(jogadores).filter(j => j.vivo);
-            iniciarNovaRodada(vivos);
-        }
-    }, 3000);
-}
-
-// === NOVO: CONDIÇÃO DE VITÓRIA POR TIME ===
-function verificarVitoriaTime() {
-    let vivos = Object.values(jogadores).filter(j => j.vivo);
-    if(vivos.length === 0) return false;
-
-    // Pega os times únicos dos vivos
-    let timesVivos = [...new Set(vivos.map(j => j.tipo))];
-
-    if(timesVivos.length === 1) {
-        // Só sobrou um time!
-        jogoAndando = false;
-        let timeVencedor = timesVivos[0];
-        
-        let nomeTime = "";
-        if(timeVencedor === 'p1') nomeTime = "VERDE";
-        if(timeVencedor === 'p2') nomeTime = "AZUL";
-        if(timeVencedor === 'p3') nomeTime = "VERMELHA"; // Alterado para Red
-        if(timeVencedor === 'p4') nomeTime = "AMARELA";
-
-        hallDaFama.unshift({ nome: `EQUIPE ${nomeTime}`, data: new Date().toLocaleTimeString('pt-BR') });
-        
-        io.emit('fimDeJogo', { campeao: { nome: `EQUIPE ${nomeTime}`, tipo: timeVencedor } });
-        io.emit('atualizarRanking', hallDaFama);
-        return true;
-    }
-    return false;
-}
-
-function iniciarNovaRodada(sobreviventes) {
-    faseAtual++;
-    sobreviventes.forEach(j => { j.sala = null; j.temEscudo = false; });
-    
-    let vivos = Object.values(jogadores).filter(j => j.vivo);
-    salasData = iniciarSalas(vivos.length);
-    ordemTurno = vivos.sort(() => Math.random() - 0.5);
-    turnoIndex = 0;
-
-    io.emit('novaRodada', { fase: faseAtual, salas: salasData, jogadores: Object.values(jogadores) });
-    setTimeout(processarProximoTurno, 1000);
-}
-
-// === CONEXÃO ===
-io.on('connection', (socket) => {
-    atualizarContadorOnline();
-    socket.emit('atualizarRanking', hallDaFama);
-    socket.emit('configAtual', gameConfig);
-
-    socket.on('adminLogin', (s) => socket.emit('adminLogado', s === 'admin'));
-    socket.on('adminSalvarConfig', (n) => { /*...*/ });
-    socket.on('adminZerarRank', () => { hallDaFama = []; io.emit('atualizarRanking', hallDaFama); });
-
-    socket.on('entrar', (dados) => {
-        jogadores[socket.id] = {
-            id: socket.id, nome: dados.nome, tipo: dados.tipo,
-            vidas: gameConfig.vidasIniciais, temEscudo: false, sala: null, vivo: true, ehBot: false
-        };
-        io.emit('atualizarLista', Object.values(jogadores));
-    });
-
-    socket.on('iniciarJogo', () => {
-        if(jogoAndando) return;
-        let lista = Object.values(jogadores);
-        let qtdFaltante = gameConfig.maxJogadores - lista.length;
-        if(qtdFaltante < 0) qtdFaltante = 0;
-
-        // Distribuição Equilibrada de Bots
-        // p1, p2, p3, p4 ciclicamente
-        const times = ['p1', 'p2', 'p3', 'p4'];
-        
-        for(let i=1; i<=qtdFaltante; i++) {
-            let idBot = `bot-${Date.now()}-${i}`;
-            // Se já tem gente, tenta balancear, senão vai aleatório
-            let timeBot = times[(lista.length + i) % 4]; 
-
-            jogadores[idBot] = {
-                id: idBot, nome: `Bot ${i}`, tipo: timeBot,
-                vidas: gameConfig.vidasIniciais, temEscudo: false, sala: null, vivo: true, ehBot: true
-            };
-        }
-        
-        let vivos = Object.values(jogadores);
-        salasData = iniciarSalas(vivos.length);
-        ordemTurno = vivos.sort(() => Math.random() - 0.5);
-        turnoIndex = 0;
-        jogoAndando = true;
-        faseAtual = 1;
-        io.emit('inicioDePartida', { salas: salasData, jogadores: vivos });
-        setTimeout(processarProximoTurno, 1000);
-    });
-
-    socket.on('jogarTurno', (idSala) => {
-        let jogadorDaVez = ordemTurno[turnoIndex];
-        if(jogadorDaVez && jogadorDaVez.id === socket.id) {
-            resolverEntrada(idSala, socket.id);
-        }
-    });
-
-    socket.on('enviarVoto', (idAlvo) => {
-        if(jogadores[socket.id]) registrarVoto(socket.id, idAlvo);
-    });
-
-    socket.on('fazerAposta', (idCandidato) => {
-        apostas[socket.id] = idCandidato;
-    });
-
-    socket.on('pedirDado', () => {
-        if(boardAtivo) rolarDado(socket.id);
-    });
-
-    socket.on('disconnect', () => {
-        if(jogadores[socket.id]) { jogadores[socket.id].vivo = false; delete jogadores[socket.id]; }
-        let humanos = Object.values(jogadores).filter(j => !j.ehBot);
-        if(humanos.length === 0) { jogoAndando = false; jogadores = {}; }
-        io.emit('atualizarLista', Object.values(jogadores));
-        atualizarContadorOnline();
-    });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR TEAMS: ${PORT}`); });
+    </script>
+</body>
+</html>
