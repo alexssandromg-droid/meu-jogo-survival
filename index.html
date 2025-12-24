@@ -2,308 +2,335 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portas do Destino</title>
-    <script src="/socket.io/socket.io.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <title>Super Cat Troll</title>
     <style>
-        :root {
-            --neon-green: #00e676; --neon-blue: #00b0ff; --neon-gold: #ffea00; --neon-red: #ff1744; --bg-dark: #050505;
-        }
-        body { background-color: var(--bg-dark); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; height: 100vh; overflow: hidden; user-select: none; display: flex; flex-direction: column; }
-
-        /* UI FORCA */
-        #hangman-overlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(10, 0, 0, 0.98); z-index: 2000; flex-direction: column; justify-content: center; align-items: center;
-        }
-        #word-display { font-size: 50px; letter-spacing: 10px; margin: 20px; font-family: monospace; color: white; }
-        .kb-row { display: flex; gap: 5px; margin-bottom: 5px; }
-        .kb-key { width: 40px; height: 40px; background: #333; border: 1px solid #555; color: white; cursor: pointer; display: flex; justify-content: center; align-items: center; font-weight: bold; }
-        .kb-key:hover { background: #555; }
-        .kb-key.used { opacity: 0.3; cursor: not-allowed; background: black; }
-        .kb-key.correct { background: green; }
-        .kb-key.wrong { background: red; }
-        
-        #hangman-status { font-size: 24px; margin-bottom: 10px; color: var(--neon-gold); }
-        .lives-box { display: flex; gap: 20px; font-size: 20px; }
-
-        /* UI APOSTA */
-        #betting-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 1000; flex-direction: column; justify-content: center; align-items: center; }
-        .bet-container { display: flex; gap: 30px; }
-        .bet-btn { width: 150px; height: 150px; background: #222; border: 4px solid #555; border-radius: 10px; color: white; font-size: 20px; cursor: pointer; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: 0.3s; }
-        .bet-btn:hover { transform: scale(1.1); border-color: gold; }
-        .bet-btn.selected { background: white; color: black; border-color: lime; }
-
-        /* GERAL */
-        #btn-admin-toggle { position: absolute; top: 20px; left: 20px; background: none; border: none; font-size: 24px; cursor: pointer; color: #333; z-index: 300; }
-        #admin-panel { display: none; position: absolute; background: rgba(0,0,0,0.95); width: 100%; height: 100%; z-index: 400; flex-direction: column; justify-content: center; align-items: center; }
-        .admin-card { background: #1a1a1a; padding: 20px; border: 1px solid white; width: 300px; }
-        .admin-row { margin-bottom: 10px; }
-        input, select, button { width: 100%; padding: 10px; margin-bottom: 5px; font-family: inherit; }
-
-        #main-menu { position: absolute; width: 100%; height: 100%; background: #050505; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        #game-interface { display: none; width: 100%; height: 100%; flex-direction: column; }
-        #header { height: 60px; background: #111; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
-        #main-container { display: flex; flex: 1; overflow: hidden; }
-        #sidebar { width: 250px; background: #0c0c0c; overflow-y: auto; padding: 10px; }
-        #game-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        #rooms-grid { display: grid; gap: 10px; padding: 20px; max-width: 800px; width: 100%; max-height: 80vh; overflow-y: auto; }
-
-        .room-btn { aspect-ratio: 1; background: #1e1e1e; border: 2px solid #333; border-radius: 8px; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; }
-        .room-btn:hover { border-color: #777; }
-        .room-btn.taken { opacity: 0.6; cursor: not-allowed; }
-        .room-btn.duelo { background: #300; border-color: red; }
-        .room-btn.revive { background: #003; border-color: cyan; }
-        .room-btn.vazio { background: #222; border-color: #444; }
-
-        .player-item { padding: 8px; margin-bottom: 5px; background: #181818; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid transparent; }
-        .player-item.p1 { border-left-color: var(--neon-green); }
-        .player-item.p2 { border-left-color: var(--neon-blue); }
-        .player-item.p3 { border-left-color: var(--neon-red); }
-        .player-item.p4 { border-left-color: var(--neon-gold); }
-        .player-item.turn { background: #333; border-right: 3px solid white; }
-        .player-item.dead { opacity: 0.3; text-decoration: line-through; }
-
-        #message-box { font-size: 24px; font-weight: bold; margin-bottom: 20px; height: 30px; text-align: center; }
-        #mode-display { color: cyan; font-size: 20px; margin-bottom: 10px; }
-        #victory-screen { display: none; position: absolute; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; justify-content: center; align-items: center; z-index: 50; }
-        
-        @media (max-width: 600px) { #main-container { flex-direction: column-reverse; } #sidebar { width: 100%; height: 150px; } #rooms-grid { grid-template-columns: repeat(4, 1fr) !important; padding: 5px; } }
+        body { margin: 0; overflow: hidden; background: #5c94fc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        canvas { background: #5c94fc; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; font-size: 20px; font-weight: bold; text-shadow: 2px 2px 0 #000; }
+        #msg { position: absolute; top: 40%; width: 100%; text-align: center; color: red; font-size: 40px; font-weight: bold; text-shadow: 2px 2px 0 #000; display: none; }
     </style>
 </head>
 <body>
 
-    <button id="btn-admin-toggle" onclick="abrirAdmin()">⚙️</button>
-    <div style="position:absolute; top:20px; right:20px; background:#111; padding:5px 10px; border-radius:5px;">ONLINE: <span id="online-count">0</span></div>
+    <div id="ui">MORTES: <span id="death-count">0</span> | FASE 1</div>
+    <div id="msg">VOCÊ MORREU!</div>
+    <canvas id="gameCanvas"></canvas>
 
-    <div id="hangman-overlay">
-        <h1 style="color:var(--neon-red)">DUELO DA FORCA</h1>
-        <div id="hangman-status">VEZ DE: -</div>
-        <div class="lives-box">
-            <div id="lives-p1" style="color:cyan">P1: ❤️❤️❤️❤️❤️</div>
-            <div id="lives-p2" style="color:magenta">P2: ❤️❤️❤️❤️❤️</div>
-        </div>
-        <div id="word-display">_ _ _ _ _</div>
-        <div id="keyboard"></div>
-    </div>
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
 
-    <div id="betting-modal">
-        <h1 style="color:gold">APOSTE SUA VIDA!</h1>
-        <div class="bet-container">
-            <div class="bet-btn" id="bet-p1" onclick="apostar(1)"><span id="name-p1">P1</span></div>
-            <div style="color:white; align-self:center; font-size:40px;">VS</div>
-            <div class="bet-btn" id="bet-p2" onclick="apostar(2)"><span id="name-p2">P2</span></div>
-        </div>
-        <div style="color:red; margin-top:20px;">PERDEU APOSTA = MORTE</div>
-    </div>
+    // Configuração da Tela
+    const WIDTH = 800;
+    const HEIGHT = 600;
+    canvas.width = WIDTH;
+    canvas.height = HEIGHT;
 
-    <div id="admin-panel">
-        <div class="admin-card">
-            <h2>ADMIN</h2>
-            <div id="admin-login-area">
-                <input type="password" id="admin-pass" placeholder="Senha">
-                <button onclick="tentarLoginAdmin()">ACESSAR</button>
-                <button onclick="fecharAdmin()">SAIR</button>
-            </div>
-            <div id="admin-controls" style="display:none;">
-                <label>MODO DE JOGO:</label>
-                <select id="adm-mode" onchange="mudarModo()">
-                    <option value="SOLO">SOLO (Individual)</option>
-                    <option value="DUPLA">DUPLA</option>
-                    <option value="SQUAD">SQUAD (Equipes)</option>
-                </select>
-                <button onclick="fecharAdmin()">FECHAR</button>
-            </div>
-        </div>
-    </div>
+    // --- VARIÁVEIS GLOBAIS ---
+    let deaths = 0;
+    let gameOver = false;
+    let cameraX = 0;
+    
+    // Configuração do Jogador (O Gato)
+    const player = {
+        x: 50, y: 400, w: 30, h: 30,
+        vx: 0, vy: 0,
+        speed: 5, jump: -12, gravity: 0.6,
+        grounded: false,
+        color: 'white'
+    };
 
-    <div id="main-menu">
-        <h1 style="font-size:50px; color:white; text-shadow:0 0 10px red;">PORTAS DO DESTINO</h1>
-        <div id="mode-display">MODO: SOLO</div>
-        <div class="menu-card" id="login-step">
-            <input type="text" id="my-name" placeholder="NICKNAME" maxlength="12">
-            <select id="my-color">
-                <option value="p1">Equipe Verde</option>
-                <option value="p2">Equipe Azul</option>
-                <option value="p3">Equipe Vermelha</option>
-                <option value="p4">Equipe Amarela</option>
-            </select>
-            <button onclick="entrarNoLobby()" style="background:var(--neon-green); font-weight:bold;">ENTRAR</button>
-        </div>
-        <div class="menu-card" id="lobby-step" style="display:none;">
-            <h3>LOBBY</h3>
-            <div id="lobby-list" style="background:#000; height:150px; overflow-y:auto; color:white; padding:10px;"></div>
-            <button id="btn-start" onclick="iniciarJogo()" style="background:gold; display:none; margin-top:10px;">INICIAR</button>
-            <div id="lobby-msg" style="color:#777; margin-top:5px;">Aguardando Host...</div>
-        </div>
-    </div>
+    // Controles
+    const keys = { right: false, left: false, up: false };
 
-    <div id="game-interface">
-        <div id="header">
-            <button onclick="location.reload()" style="background:#333; color:white; border:none; width:auto; padding:0 20px;">SAIR</button>
-            <div id="timer-txt" style="color:gold; font-size:20px;">--</div>
-            <div style="color:white">VIVOS: <span id="alive-txt">0</span></div>
-        </div>
-        <div id="main-container">
-            <div id="sidebar"><div id="game-players-list"></div></div>
-            <div id="game-area">
-                <div id="message-box"></div>
-                <div id="rooms-grid"></div>
-            </div>
-        </div>
-    </div>
+    // --- MAPA E OBJETOS ---
+    // 1 = Chão, 2 = Bloco ? (Armadilha), 3 = Espinho, 4 = Bandeira, 5 = Bloco Invisível, 6 = Monstro, 7 = Nuvem Falsa
+    // O mapa é desenhado em blocos de 40x40
+    let blocks = [];
+    let enemies = [];
+    let particles = [];
 
-    <div id="victory-screen">
-        <h1 style="color:gold; font-size:60px;">VENCEDOR</h1>
-        <h2 id="winner-name" style="color:white;"></h2>
-        <button onclick="location.reload()" style="width:200px;">VOLTAR</button>
-    </div>
+    // Level Design (Maldoso)
+    // 0 = ar, 1 = chão, 2 = surpresa, 3 = espinho, 9 = fim
+    // Vamos criar o mapa via código para facilitar armadilhas dinâmicas
+    function initLevel() {
+        blocks = [];
+        enemies = [];
+        player.x = 50; player.y = 400; player.vx = 0; player.vy = 0;
+        cameraX = 0;
+        gameOver = false;
+        document.getElementById('msg').style.display = 'none';
 
-    <script>
-        const socket = io();
-        let meuId=null, minhaVez=false, timerVisual=null, apostaP1Id=null, apostaP2Id=null;
-        const SFX={click:()=>playTone(600,'sine',0.1), bad:()=>playTone(150,'sawtooth',0.3), win:()=>playTone(600,'sine',0.6)};
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        function playTone(f,t,d){if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator();const g=audioCtx.createGain();o.type=t;o.frequency.setValueAtTime(f,audioCtx.currentTime);g.gain.setValueAtTime(0.1,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(0.01,audioCtx.currentTime+d);o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d);}
-
-        function abrirAdmin(){document.getElementById('admin-panel').style.display='flex';}
-        function fecharAdmin(){document.getElementById('admin-panel').style.display='none';}
-        function tentarLoginAdmin(){socket.emit('adminLogin',document.getElementById('admin-pass').value);}
-        socket.on('adminLogado',(ok)=>{if(ok){document.getElementById('admin-login-area').style.display='none';document.getElementById('admin-controls').style.display='block';}});
-        function mudarModo(){socket.emit('mudarModo', document.getElementById('adm-mode').value);}
-        
-        socket.on('connect', ()=>meuId=socket.id);
-        socket.on('jogadoresOnline', (n)=>document.getElementById('online-count').innerText=n);
-        socket.on('modoAtual', (m)=>document.getElementById('mode-display').innerText=`MODO: ${m}`);
-
-        function entrarNoLobby(){
-            let n = document.getElementById('my-name').value;
-            if(!n) return alert("Nome?");
-            socket.emit('entrar',{nome:n, tipo:document.getElementById('my-color').value});
-            document.getElementById('login-step').style.display='none';
-            document.getElementById('lobby-step').style.display='block';
-            SFX.click();
+        // Chão Base
+        for(let i=0; i<60; i++) {
+            if(i !== 15 && i !== 16) createBlock(i*40, 560, 1); // Buraco no 15/16
         }
-        function iniciarJogo(){socket.emit('iniciarJogo');}
 
-        socket.on('atualizarLista', (list)=>{
-            let html = list.map(p=>`<div style="color:${p.id===meuId?'lime':'white'}">${p.nome} (${p.tipo})</div>`).join('');
-            document.getElementById('lobby-list').innerHTML = html;
-            if(list.length>0 && list[0].id===meuId) document.getElementById('btn-start').style.display='block';
+        // Plataformas e Armadilhas
+        createBlock(300, 400, 2); // Bloco ? normal... ou não?
+        createBlock(340, 400, 1); // Tijolo
+        createBlock(380, 400, 2); // Outro ?
+        createBlock(380, 250, 5); // Bloco Invisível sacana em cima do outro
+
+        createBlock(600, 520, 3); // Espinho
+        createBlock(640, 520, 3); // Espinho
+
+        createBlock(800, 450, 1); 
+        createBlock(840, 450, 1); 
+        createBlock(880, 450, 1); 
+
+        // Nuvem assassina (Inimigo)
+        createEnemy(500, 520, 'goomba');
+        createEnemy(1100, 520, 'goomba');
+
+        // Teto falso que cai
+        createBlock(1300, 200, 7); 
+        createBlock(1340, 200, 7); 
+
+        // Final
+        createBlock(2000, 520, 4); // Bandeira
+    }
+
+    function createBlock(x, y, type) {
+        blocks.push({ x, y, w: 40, h: 40, type, visible: (type !== 5), active: true });
+    }
+
+    function createEnemy(x, y, type) {
+        enemies.push({ x, y, w: 30, h: 30, vx: -2, vy: 0, type, active: true });
+    }
+
+    // --- FÍSICA E LÓGICA ---
+
+    function update() {
+        if(gameOver) return;
+
+        // Movimento Horizontal
+        if (keys.right) player.vx = player.speed;
+        else if (keys.left) player.vx = -player.speed;
+        else player.vx *= 0.8; // Fricção
+
+        player.x += player.vx;
+        checkCollisions(player, 'x');
+
+        // Movimento Vertical (Gravidade)
+        player.vy += player.gravity;
+        player.y += player.vy;
+        player.grounded = false;
+        checkCollisions(player, 'y');
+
+        // Cair no buraco
+        if (player.y > HEIGHT) die();
+
+        // Câmera
+        if (player.x > cameraX + 300) {
+            cameraX = player.x - 300;
+        }
+
+        // Inimigos
+        enemies.forEach(e => {
+            if(!e.active) return;
+            e.x += e.vx;
+            e.vy += 0.5; // gravidade
+            e.y += e.vy;
             
-            // Game List
-            let gl = document.getElementById('game-players-list'); gl.innerHTML='';
-            list.forEach(p=>{
-                let d=document.createElement('div'); d.className=`player-item ${p.tipo}`;
-                if(!p.vivo) d.classList.add('dead');
-                if(p.id===meuId) d.style.borderRight="5px solid white";
-                d.innerHTML = `<span>${p.nome}</span><span>${p.vivo?'VIVO':'MORT'}</span>`;
-                gl.appendChild(d);
+            // Colisão Inimigo com Blocos
+            blocks.forEach(b => {
+                if(b.active && rectIntersect(e.x, e.y, e.w, e.h, b.x, b.y, b.w, b.h)) {
+                    e.y = b.y - e.h;
+                    e.vy = 0;
+                }
             });
-            document.getElementById('alive-txt').innerText = list.filter(p=>p.vivo).length;
-        });
 
-        socket.on('inicioDePartida', (d)=>{
-            document.getElementById('main-menu').style.display='none';
-            document.getElementById('game-interface').style.display='flex';
-            renderGrid(d.salas);
-        });
-        socket.on('novaRodada', (d)=>{
-            renderGrid(d.salas); document.getElementById('message-box').innerText=`RODADA ${d.fase}`;
-        });
-
-        socket.on('salaOcupada', (d)=>{
-            let b = document.getElementById(`room-${d.idSala}`);
-            b.classList.add('taken');
-            let ico='🚪'; 
-            if(d.efeito==='duelo'){ico='⚔️'; b.classList.add('duelo'); SFX.bad();}
-            else if(d.efeito==='revive'){ico='😇'; b.classList.add('revive'); SFX.click();}
-            else {ico='💨'; b.classList.add('vazio');}
-            b.innerHTML = `<div style="font-size:30px">${ico}</div><div style="font-size:10px">${d.jogador.nome}</div>`;
-            if(d.msg) document.getElementById('message-box').innerText += d.msg;
-        });
-
-        socket.on('mensagem', (d)=>{let m=document.getElementById('message-box'); m.innerText=d.texto; m.style.color=d.cor;});
-        
-        // --- APOSTAS ---
-        socket.on('abrirApostasUI', (d)=>{
-            apostaP1Id=d.p1.id; apostaP2Id=d.p2.id;
-            document.getElementById('betting-modal').style.display='flex';
-            document.getElementById('name-p1').innerText=d.p1.nome;
-            document.getElementById('name-p2').innerText=d.p2.nome;
-            document.getElementById('bet-p1').classList.remove('selected');
-            document.getElementById('bet-p2').classList.remove('selected');
-        });
-        function apostar(n){ socket.emit('fazerAposta', n===1?apostaP1Id:apostaP2Id); document.getElementById(`bet-p${n}`).classList.add('selected'); SFX.click(); }
-        socket.on('fecharApostasUI', ()=>document.getElementById('betting-modal').style.display='none');
-
-        // --- FORCA ---
-        socket.on('iniciarForcaUI', (d)=>{
-            document.getElementById('hangman-overlay').style.display='flex';
-            document.getElementById('lives-p1').innerText = `${d.p1.nome}: ❤️❤️❤️❤️❤️`;
-            document.getElementById('lives-p2').innerText = `${d.p2.nome}: ❤️❤️❤️❤️❤️`;
-            
-            // Teclado
-            let kb = document.getElementById('keyboard'); kb.innerHTML='';
-            let chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            let row = document.createElement('div'); row.className='kb-row';
-            for(let i=0; i<chars.length; i++){
-                let k = document.createElement('div'); k.className='kb-key'; k.innerText=chars[i]; k.id=`key-${chars[i]}`;
-                k.onclick = () => socket.emit('chuteForca', chars[i]);
-                row.appendChild(k);
-                if((i+1)%9===0 || i===chars.length-1) { kb.appendChild(row); row=document.createElement('div'); row.className='kb-row'; }
+            // Colisão Jogador com Inimigo
+            if(rectIntersect(player.x, player.y, player.w, player.h, e.x, e.y, e.w, e.h)) {
+                // Se pular na cabeça
+                if(player.vy > 0 && player.y + player.h < e.y + e.h/2) {
+                    e.active = false;
+                    player.vy = -8; // Pula de novo
+                    createParticles(e.x, e.y, 'red');
+                } else {
+                    die();
+                }
             }
         });
 
-        socket.on('forcaUpdate', (d)=>{
-            document.getElementById('word-display').innerText = d.palavra.join(' ');
-            document.getElementById('hangman-status').innerText = (d.vezId === meuId) ? "SUA VEZ!" : "VEZ DO OPONENTE";
-            
-            // Atualiza teclado
-            d.usadas.forEach(L => {
-                let k = document.getElementById(`key-${L}`);
-                if(k) k.classList.add('used');
-            });
-
-            // Atualiza vidas (gambiarra visual simples)
-            let p1Lives = 5 - (d.erros[Object.keys(d.erros)[0]] || 0);
-            let p2Lives = 5 - (d.erros[Object.keys(d.erros)[1]] || 0);
-            // Idealmente mapear IDs, mas vamos deixar assim pelo prompt
+        // Armadilhas de gatilho (Blocos que caem)
+        blocks.forEach(b => {
+            if(b.type === 7 && Math.abs(player.x - b.x) < 40) {
+                b.y += 10; // Cai rápido na cabeça
+            }
+            if(b.type === 7 && rectIntersect(player.x, player.y, player.w, player.h, b.x, b.y, b.w, b.h)) {
+                die();
+            }
         });
+    }
 
-        socket.on('forcaFim', (d)=>{
-            document.getElementById('word-display').innerText = d.palavra;
-            setTimeout(()=>document.getElementById('hangman-overlay').style.display='none', 3000);
-        });
-        socket.on('fecharForcaUI', ()=>document.getElementById('hangman-overlay').style.display='none');
+    function checkCollisions(obj, axis) {
+        for (let b of blocks) {
+            if (!b.active) continue;
 
-        // CORE UTILS
-        socket.on('mudancaDeTurno', (d)=>{
-            if(d.idJogador===meuId) { document.getElementById('message-box').innerText="SUA VEZ DE ESCOLHER A PORTA!"; document.getElementById('message-box').style.color="lime"; }
-            else { document.getElementById('message-box').innerText=`VEZ DE ${d.nome}`; document.getElementById('message-box').style.color="white"; }
-        });
-        
-        socket.on('efeitoKill', (d)=>{
-            // Visual flash red?
-        });
+            if (rectIntersect(obj.x, obj.y, obj.w, obj.h, b.x, b.y, b.w, b.h)) {
+                
+                // Morrer em espinho
+                if(b.type === 3) { die(); return; }
+                // Ganhar na bandeira
+                if(b.type === 4) { alert("VOCÊ VENCEU O IMPOSSÍVEL!"); initLevel(); return; }
 
-        socket.on('fimDeJogo', (d)=>{
-            document.getElementById('victory-screen').style.display='flex';
-            document.getElementById('winner-name').innerText = d.campeao.nome;
-            SFX.win();
-        });
-
-        function renderGrid(salas){
-            let g = document.getElementById('rooms-grid'); g.innerHTML='';
-            let cols = window.innerWidth<600?4:5; g.style.gridTemplateColumns=`repeat(${cols}, 1fr)`;
-            salas.forEach(s=>{
-                let b=document.createElement('div'); b.className='room-btn'; b.id=`room-${s.id}`;
-                b.onclick=()=>{if(document.getElementById('message-box').innerText.includes("SUA VEZ")) socket.emit('jogarTurno', s.id);};
-                b.innerHTML=`<div style="font-size:12px; position:absolute; top:2px; left:4px; opacity:0.5">${s.id}</div><div style="font-size:30px">🚪</div>`;
-                g.appendChild(b);
-            });
+                if(axis === 'x') {
+                    if (obj.vx > 0) obj.x = b.x - obj.w;
+                    else if (obj.vx < 0) obj.x = b.x + b.w;
+                    obj.vx = 0;
+                } else {
+                    if (obj.vy > 0) { // Caindo
+                        obj.y = b.y - obj.h;
+                        obj.grounded = true;
+                        obj.vy = 0;
+                    } else if (obj.vy < 0) { // Batendo cabeça
+                        obj.y = b.y + b.h;
+                        obj.vy = 0;
+                        
+                        // Revelar bloco invisível
+                        if(b.type === 5) {
+                            b.visible = true;
+                            b.type = 1; // vira sólido normal
+                        }
+                        // Bloco Surpresa vira monstro
+                        if(b.type === 2) {
+                            b.type = 1; // vira bloco usado
+                            createEnemy(b.x, b.y - 40, 'troll');
+                        }
+                    }
+                }
+            }
         }
-    </script>
+    }
+
+    function rectIntersect(x1, y1, w1, h1, x2, y2, w2, h2) {
+        return x2 < x1 + w1 && x2 + w2 > x1 && y2 < y1 + h1 && y2 + h2 > y1;
+    }
+
+    function die() {
+        if(gameOver) return;
+        gameOver = true;
+        deaths++;
+        document.getElementById('death-count').innerText = deaths;
+        document.getElementById('msg').style.display = 'block';
+        createParticles(player.x, player.y, 'white');
+        
+        setTimeout(initLevel, 1000);
+    }
+
+    function createParticles(x, y, color) {
+        // Efeito simples visual (não implementado full pra não pesar o código)
+    }
+
+    // --- RENDERIZAÇÃO ---
+
+    function draw() {
+        // Limpar tela
+        ctx.fillStyle = '#5c94fc';
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+        ctx.save();
+        ctx.translate(-cameraX, 0);
+
+        // Desenhar Blocos
+        blocks.forEach(b => {
+            if(!b.active) return;
+            if(!b.visible && b.type === 5) return; // Invisível
+
+            if(b.type === 1 || b.type === 5) {
+                // Chão Marrom
+                ctx.fillStyle = '#A0522D';
+                ctx.fillRect(b.x, b.y, b.w, b.h);
+                ctx.strokeStyle = 'black';
+                ctx.strokeRect(b.x, b.y, b.w, b.h);
+            } else if (b.type === 2) {
+                // Bloco ?
+                ctx.fillStyle = '#FFD700';
+                ctx.fillRect(b.x, b.y, b.w, b.h);
+                ctx.fillStyle = 'black';
+                ctx.font = '20px Arial';
+                ctx.fillText('?', b.x+12, b.y+28);
+            } else if (b.type === 3) {
+                // Espinho
+                ctx.fillStyle = '#DDD';
+                ctx.beginPath();
+                ctx.moveTo(b.x, b.y + b.h);
+                ctx.lineTo(b.x + b.w/2, b.y);
+                ctx.lineTo(b.x + b.w, b.y + b.h);
+                ctx.fill();
+            } else if (b.type === 4) {
+                // Bandeira
+                ctx.fillStyle = 'lime';
+                ctx.fillRect(b.x, b.y - 40, 10, 80);
+                ctx.fillRect(b.x+10, b.y-40, 40, 30);
+            } else if (b.type === 7) {
+                // Bloco que cai (cinza escuro)
+                ctx.fillStyle = '#555';
+                ctx.fillRect(b.x, b.y, b.w, b.h);
+            }
+        });
+
+        // Desenhar Inimigos
+        enemies.forEach(e => {
+            if(e.active) {
+                ctx.fillStyle = e.type === 'troll' ? 'purple' : 'brown'; // Goomba ou Troll
+                // Desenho simples "arredondado"
+                ctx.beginPath();
+                ctx.arc(e.x + e.w/2, e.y + e.h/2, e.w/2, 0, Math.PI*2);
+                ctx.fill();
+                // Olhos
+                ctx.fillStyle = 'white';
+                ctx.fillRect(e.x+5, e.y+5, 8, 8);
+                ctx.fillRect(e.x+18, e.y+5, 8, 8);
+            }
+        });
+
+        // Desenhar Jogador (Gato Branco)
+        if(!gameOver) {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(player.x, player.y, player.w, player.h);
+            // Orelhas
+            ctx.beginPath();
+            ctx.moveTo(player.x, player.y);
+            ctx.lineTo(player.x+5, player.y-10);
+            ctx.lineTo(player.x+10, player.y);
+            ctx.moveTo(player.x+20, player.y);
+            ctx.lineTo(player.x+25, player.y-10);
+            ctx.lineTo(player.x+30, player.y);
+            ctx.fill();
+            // Carinha
+            ctx.fillStyle = 'black';
+            ctx.fillRect(player.x+5, player.y+10, 5, 5); // Olho esq
+            ctx.fillRect(player.x+20, player.y+10, 5, 5); // Olho dir
+            ctx.fillText('w', player.x+10, player.y+25); // Boca
+        }
+
+        ctx.restore();
+        requestAnimationFrame(draw);
+        update();
+    }
+
+    // --- CONTROLES ---
+    window.addEventListener('keydown', e => {
+        if(e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+        if(e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+        if((e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') && player.grounded) {
+            player.vy = player.jump;
+            player.grounded = false;
+        }
+    });
+
+    window.addEventListener('keyup', e => {
+        if(e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+        if(e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+    });
+
+    // Iniciar
+    initLevel();
+    draw();
+
+</script>
 </body>
 </html>
