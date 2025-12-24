@@ -13,7 +13,7 @@ app.get('/', (req, res) => {
 let gameConfig = {
     maxJogadores: 20,
     vidasIniciais: 2,
-    velocidadeBot: 800, // Um pouco mais humano
+    velocidadeBot: 500,
     fatorPortas: 1.2
 };
 
@@ -26,25 +26,16 @@ let timerTurno = null;
 let faseAtual = 1;
 let hallDaFama = [];
 
-// NOMES DE BOTS
-const botNames = [
-    "Viper", "Ghost", "Shadow", "Rex", "Neo", "Cipher", "Blade", "Raven", "Volt", "Titan",
-    "Fury", "Ace", "Duke", "Wolf", "Hawk", "Storm", "Nova", "Rogue", "Spike", "Zero",
-    "Glitch", "Echo", "Tank", "Joker", "Venom", "Doom", "Crash", "Axel", "Blaze", "Iron"
-];
-
-// Votação
+// Variáveis Votação e Apostas
 let votosComputados = {}; 
 let jaVotaram = [];
-let apostas = {}; 
+let apostas = {}; // { idApostador: idCandidatoEscolhido }
 
-// Tabuleiro
+// Variáveis Tabuleiro
 let boardAtivo = false;
-let boardPlayers = []; // Lista de quem está jogando (2, 3 ou 4)
+let boardPlayers = []; 
 let boardPositions = {};
 let boardTurn = 0; 
-let boardWinners = []; // Quem já chegou no fim
-let qtdVagasSalvas = 2; // Quantos se salvam
 const BOARD_SIZE = 20;
 
 // === AUXILIARES ===
@@ -54,7 +45,7 @@ function iniciarSalas(qtdJogadores) {
 
     let conteudos = [];
     let qtdEscudo = Math.max(2, Math.floor(qtdPortas * 0.20)); 
-    let qtdVida = Math.floor(qtdPortas * 0.15);
+    let qtdVida = Math.floor(qtdPortas * 0.10);
     let qtdGas = Math.floor(qtdPortas * 0.10); 
 
     for(let i=0; i<qtdEscudo; i++) conteudos.push('escudo');
@@ -73,13 +64,6 @@ function atualizarContadorOnline() {
     io.emit('jogadoresOnline', io.engine.clientsCount);
 }
 
-function getUniqueBotName() {
-    let usedNames = Object.values(jogadores).map(j => j.nome);
-    let available = botNames.filter(n => !usedNames.includes(n));
-    if(available.length === 0) return `Bot-${Math.floor(Math.random()*1000)}`;
-    return available[Math.floor(Math.random() * available.length)];
-}
-
 // === FLUXO DO JOGO ===
 
 function processarProximoTurno() {
@@ -88,13 +72,10 @@ function processarProximoTurno() {
 
     if(turnoIndex >= ordemTurno.length) {
         let vivos = Object.values(jogadores).filter(j => j.vivo);
-        
-        if(vivos.length <= 2) {
-            // RETA FINAL: Vai direto pro duelo mortal
-            iniciarBoardGame(vivos, 1); // Apenas 1 sobrevive
+        if(vivos.length > 1) {
+            iniciarFaseVotacao(null);
         } else {
-            // FASE NORMAL: Votação para eliminar
-            iniciarFaseVotacao();
+            faseExplosao(null); 
         }
         return;
     }
@@ -156,13 +137,15 @@ function resolverEntrada(idSala, idJogador) {
 }
 
 // 2. FASE DE VOTAÇÃO
-function iniciarFaseVotacao() {
+function iniciarFaseVotacao(empatados) {
     votosComputados = {};
     jaVotaram = [];
     
-    io.emit('mensagem', { texto: "🗳️ VOTAÇÃO: ESCOLHAM OS 4 PARA O JOGO MORTAL!", cor: "#00b0ff" });
-    let candidatos = Object.values(jogadores).filter(j => j.vivo);
+    io.emit('mensagem', { texto: "🗳️ VOTAÇÃO INICIADA!", cor: "#00b0ff" });
+    let candidatos = empatados ? empatados : Object.values(jogadores).filter(j => j.vivo);
     
+    if(candidatos.length === 0) { faseExplosao(null); return; }
+
     io.emit('abrirVotacao', candidatos);
 
     Object.values(jogadores).filter(j => j.ehBot).forEach(bot => {
@@ -189,102 +172,69 @@ function registrarVoto(idEleitor, idAlvo) {
 
 function finalizarVotacao() {
     io.emit('fecharVotacao');
+    let rankingVotos = Object.keys(votosComputados).sort((a,b) => votosComputados[b] - votosComputados[a]);
     
-    // Ordena por votos
-    let ranking = Object.keys(votosComputados).sort((a,b) => votosComputados[b] - votosComputados[a]);
-    
-    // Se não teve votos suficientes, pega aleatório dos vivos
-    if(ranking.length < 4) {
-        let vivos = Object.values(jogadores).filter(j => j.vivo).map(j => j.id);
-        // Completa o ranking com quem não foi votado mas tá vivo
-        vivos.forEach(id => { if(!ranking.includes(id)) ranking.push(id); });
+    if(rankingVotos.length === 0) {
+        io.emit('mensagem', { texto: "NINGUÉM VOTOU...", cor: "yellow" });
+        iniciarNovaRodada(Object.values(jogadores).filter(j=>j.vivo));
+        return;
     }
 
-    // Pega os TOP 4 (ou menos se tiver poucos vivos)
-    let maxParticipantes = Math.min(ranking.length, 4);
-    let idsParticipantes = ranking.slice(0, maxParticipantes);
-    
-    let participantes = idsParticipantes.map(id => jogadores[id]);
+    let id1 = rankingVotos[0];
+    let id2 = rankingVotos[1];
 
-    // Inicia Apostas antes do Tabuleiro
-    iniciarFaseApostas(participantes);
+    if(id2) {
+        iniciarFaseApostas(jogadores[id1], jogadores[id2]);
+    } else {
+        faseExplosao(jogadores[id1]);
+    }
 }
 
 // 3. FASE DE APOSTAS
-function iniciarFaseApostas(participantes) {
-    apostas = {};
-    io.emit('mensagem', { texto: `💸 QUEM SE SALVA? FAÇAM SUAS APOSTAS!`, cor: "#00e676" });
+function iniciarFaseApostas(p1, p2) {
+    if(!p1 || !p2) { faseExplosao(null); return; }
     
-    // Manda lista pro front
-    io.emit('abrirApostasUI', participantes);
+    apostas = {};
+    io.emit('mensagem', { texto: `💸 QUEM VENCE O DUELO? APOSTEM!`, cor: "#00e676" });
+    io.emit('abrirApostasUI', { p1: p1, p2: p2 });
 
-    // Bots apostam
-    Object.values(jogadores).filter(j => j.ehBot && j.vivo && !participantes.includes(j)).forEach(bot => {
+    // Bots fazem apostas
+    Object.values(jogadores).filter(j => j.ehBot && j.id !== p1.id && j.id !== p2.id && j.vivo).forEach(bot => {
         setTimeout(() => {
-            let rand = participantes[Math.floor(Math.random() * participantes.length)];
-            apostas[bot.id] = rand.id;
+            let apostaBot = (Math.random() > 0.5) ? p1.id : p2.id;
+            apostas[bot.id] = apostaBot;
         }, 2000);
     });
 
     setTimeout(() => {
         io.emit('fecharApostasUI');
-        iniciarBoardGame(participantes, 2); // 4 jogam, 2 sobrevivem
+        iniciarBoardGame(p1, p2);
     }, 8000);
 }
 
-// 4. JOGO DO TABULEIRO (4 PLAYERS ou 2 FINALISTAS)
-function iniciarBoardGame(participantes, vagas) {
+// 4. JOGO DO TABULEIRO
+function iniciarBoardGame(p1, p2) {
     boardAtivo = true;
-    boardPlayers = participantes; // Array de objetos jogadores
+    boardPlayers = [p1, p2];
     boardPositions = {};
-    boardWinners = [];
-    qtdVagasSalvas = vagas; // 2 normalmente, 1 na final
+    boardPositions[p1.id] = 0;
+    boardPositions[p2.id] = 0;
     boardTurn = 0; 
 
-    // Inicializa posições
-    participantes.forEach(p => boardPositions[p.id] = 0);
-
-    let titulo = (vagas === 1) ? "💀 FINAL MORTAL (SÓ 1 VIVE)" : "🎲 CORRIDA PELA VIDA (2 VAGAS)";
-    io.emit('mensagem', { texto: titulo, cor: "#ff9100" });
-    
-    io.emit('iniciarBoardUI', { 
-        players: participantes, 
-        tamanho: BOARD_SIZE,
-        vagas: vagas
-    });
+    io.emit('mensagem', { texto: `🎲 CORRIDA: ${p1.nome} VS ${p2.nome}`, cor: "#ff9100" });
+    io.emit('iniciarBoardUI', { p1: p1, p2: p2, tamanho: BOARD_SIZE });
 
     processarTurnoBoard();
 }
 
 function processarTurnoBoard() {
     if(!boardAtivo) return;
-    
-    // Verifica se jogo acabou
-    if(boardWinners.length >= qtdVagasSalvas || boardWinners.length === boardPlayers.length - 1) {
-        // Se já temos vencedores suficientes OU só sobrou 1 perdedor
-        finalizarBoardGame();
-        return;
-    }
-
     let atual = boardPlayers[boardTurn];
-    
-    // Se o jogador atual já ganhou, pula a vez dele
-    if(boardWinners.find(p => p.id === atual.id)) {
-        proximoTurnoBoard();
-        return;
-    }
-
     io.emit('vezBoard', { id: atual.id, nome: atual.nome });
 
     if(atual.ehBot && atual.vivo) {
         setTimeout(() => rolarDado(atual.id), 1500);
     }
-}
-
-function proximoTurnoBoard() {
-    boardTurn++;
-    if(boardTurn >= boardPlayers.length) boardTurn = 0;
-    setTimeout(processarTurnoBoard, 1000);
 }
 
 function rolarDado(idSolicitante) {
@@ -296,10 +246,8 @@ function rolarDado(idSolicitante) {
     let novaPos = boardPositions[atual.id] + dado;
     let msgExtra = "";
     
-    // Armadilhas e Boosts
-    if(novaPos === 6) { novaPos += 3; msgExtra = " (BOOST!)"; }
-    if(novaPos === 11) { novaPos -= 4; msgExtra = " (AZAR!)"; }
-    if(novaPos === 16) { novaPos -= 2; msgExtra = " (VOLTOU)"; }
+    if(novaPos === 13) { novaPos -= 3; msgExtra = " (AZAR!)"; }
+    if(novaPos === 7) { novaPos += 2; msgExtra = " (SORTE!)"; }
 
     if(novaPos > BOARD_SIZE) novaPos = BOARD_SIZE;
     boardPositions[atual.id] = novaPos;
@@ -307,44 +255,50 @@ function rolarDado(idSolicitante) {
     io.emit('dadoRolado', { id: atual.id, dado: dado, pos: novaPos, msg: msgExtra });
 
     if(novaPos >= BOARD_SIZE) {
-        // Chegou no fim!
-        boardWinners.push(atual);
-        io.emit('mensagem', { texto: `🏁 ${atual.nome} SE SALVOU!`, cor: "#00e676" });
-        io.emit('jogadorSalvoBoard', { id: atual.id }); // Efeito visual
-        proximoTurnoBoard();
+        boardAtivo = false;
+        let vencedor = atual;
+        let perdedor = boardPlayers.find(p => p.id !== atual.id);
+        
+        io.emit('mensagem', { texto: `🏁 ${vencedor.nome} VENCEU!`, cor: "#00e676" });
+        
+        setTimeout(() => {
+            resolverResultadoFinal(vencedor, perdedor);
+        }, 2000);
+
     } else {
-        proximoTurnoBoard();
+        boardTurn = (boardTurn === 0) ? 1 : 0;
+        setTimeout(processarTurnoBoard, 1000);
     }
 }
 
-// 5. FIM DO JOGO E ELIMINAÇÕES
-function finalizarBoardGame() {
-    boardAtivo = false;
+// 5. RESOLUÇÃO DE MORTES
+function resolverResultadoFinal(vencedor, perdedor) {
+    perdedor.vivo = false;
+    perdedor.vidas = 0;
+    io.emit('efeitoKill', { idVitima: perdedor.id });
+    io.emit('mensagem', { texto: `💥 ${perdedor.nome} PERDEU O DUELO!`, cor: "red" });
+
+    let listaApostadores = Object.values(jogadores).filter(j => j.vivo && j.id !== vencedor.id && j.id !== perdedor.id);
     
-    // Quem não está na lista de vencedores é eliminado
-    let perdedores = boardPlayers.filter(p => !boardWinners.find(w => w.id === p.id));
-    
-    perdedores.forEach(p => {
-        // Checa Escudo
-        if(p.temEscudo) {
-            p.temEscudo = false;
-            io.emit('mensagem', { texto: `🛡️ ${p.nome} USOU O ESCUDO E NÃO MORREU!`, cor: "#ffd700" });
-            io.emit('efeitoDefesa', { idVitima: p.id });
-        } else {
-            p.vivo = false; 
-            p.vidas = 0;
-            io.emit('mensagem', { texto: `💥 ${p.nome} NÃO CORREU O BASTANTE E MORREU!`, cor: "red" });
-            io.emit('efeitoKill', { idVitima: p.id });
+    listaApostadores.forEach(apostador => {
+        let voto = apostas[apostador.id];
+        if(voto !== vencedor.id) {
+            if(apostador.temEscudo) {
+                apostador.temEscudo = false;
+                io.emit('mensagem', { texto: `🛡️ ${apostador.nome} ERROU MAS SE SALVOU!`, cor: "#ffd700" });
+                io.emit('efeitoDefesa', { idVitima: apostador.id });
+            } else {
+                apostador.vivo = false;
+                apostador.vidas = 0;
+                io.emit('mensagem', { texto: `💸 ${apostador.nome} APOSTOU MAL E MORREU!`, cor: "red" });
+                io.emit('efeitoKill', { idVitima: apostador.id });
+            }
         }
     });
 
-    // Apostas
-    verificarApostas(boardWinners);
-
     io.emit('atualizarLista', Object.values(jogadores));
-    io.emit('fecharBoardUI');
-
-    // Checa campeão geral
+    io.emit('fecharBoardUI'); // Novo evento para limpar tela
+    
     let vivos = Object.values(jogadores).filter(j => j.vivo);
     setTimeout(() => {
         if(vivos.length <= 1) {
@@ -361,34 +315,38 @@ function finalizarBoardGame() {
     }, 4000);
 }
 
-function verificarApostas(vencedores) {
-    let idsVencedores = vencedores.map(v => v.id);
-    // Todos que não jogaram o minigame
-    let apostadores = Object.values(jogadores).filter(j => j.vivo && !boardPlayers.find(p => p.id === j.id));
-
-    apostadores.forEach(ap => {
-        let voto = apostas[ap.id];
-        // Se apostou em alguém que NÃO está na lista de vencedores
-        if(voto && !idsVencedores.includes(voto)) {
-            if(ap.temEscudo) {
-                ap.temEscudo = false;
-                io.emit('mensagem', { texto: `🛡️ ${ap.nome} ERROU APOSTA MAS TINHA ESCUDO!`, cor: "gold" });
-            } else {
-                ap.vivo = false; ap.vidas = 0;
-                io.emit('mensagem', { texto: `💸 ${ap.nome} PERDEU TUDO NA APOSTA!`, cor: "red" });
-                io.emit('efeitoKill', { idVitima: ap.id });
-            }
+function faseExplosao(eliminado) {
+    if(eliminado) {
+        if(eliminado.temEscudo) {
+            eliminado.temEscudo = false;
+            io.emit('mensagem', { texto: `🛡️ ${eliminado.nome} SOBREVIVEU COM ESCUDO!`, cor: "#ffd700" });
+        } else {
+            eliminado.vivo = false;
+            io.emit('mensagem', { texto: `💥 ${eliminado.nome} ELIMINADO!`, cor: "red" });
         }
-    });
+    }
+    io.emit('atualizarLista', Object.values(jogadores));
+    
+    let vivos = Object.values(jogadores).filter(j => j.vivo);
+    setTimeout(() => {
+        if(vivos.length <= 1) {
+            let campeao = vivos[0] ? vivos[0] : { nome: "NINGUÉM", tipo: "bot" };
+            io.emit('fimDeJogo', { campeao: campeao });
+        } else {
+            iniciarNovaRodada(vivos);
+        }
+    }, 3000);
 }
 
 function iniciarNovaRodada(sobreviventes) {
     faseAtual++;
     sobreviventes.forEach(j => { j.sala = null; j.temEscudo = false; });
+    
     let vivos = Object.values(jogadores).filter(j => j.vivo);
     salasData = iniciarSalas(vivos.length);
     ordemTurno = vivos.sort(() => Math.random() - 0.5);
     turnoIndex = 0;
+
     io.emit('novaRodada', { fase: faseAtual, salas: salasData, jogadores: Object.values(jogadores) });
     setTimeout(processarProximoTurno, 1000);
 }
@@ -400,7 +358,12 @@ io.on('connection', (socket) => {
     socket.emit('configAtual', gameConfig);
 
     socket.on('adminLogin', (s) => socket.emit('adminLogado', s === 'admin'));
-    socket.on('adminSalvarConfig', (n) => { /* ... */ });
+    socket.on('adminSalvarConfig', (n) => {
+        if(n.maxJogadores) gameConfig.maxJogadores = parseInt(n.maxJogadores);
+        if(n.vidasIniciais) gameConfig.vidasIniciais = parseInt(n.vidasIniciais);
+        if(n.velocidadeBot) gameConfig.velocidadeBot = parseInt(n.velocidadeBot);
+        io.emit('mensagem', { texto: "⚙️ REGRAS ATUALIZADAS!", cor: "#00e676" });
+    });
     socket.on('adminZerarRank', () => { hallDaFama = []; io.emit('atualizarRanking', hallDaFama); });
 
     socket.on('entrar', (dados) => {
@@ -419,9 +382,8 @@ io.on('connection', (socket) => {
 
         for(let i=1; i<=qtdFaltante; i++) {
             let idBot = `bot-${Date.now()}-${i}`;
-            let nomeBot = getUniqueBotName();
             jogadores[idBot] = {
-                id: idBot, nome: nomeBot, tipo: 'bot',
+                id: idBot, nome: `Bot ${i}`, tipo: 'bot',
                 vidas: gameConfig.vidasIniciais, temEscudo: false, sala: null, vivo: true, ehBot: true
             };
         }
@@ -436,17 +398,33 @@ io.on('connection', (socket) => {
         setTimeout(processarProximoTurno, 1000);
     });
 
-    socket.on('jogarTurno', (idSala) => resolverEntrada(idSala, socket.id));
-    socket.on('enviarVoto', (idAlvo) => { if(jogadores[socket.id]) registrarVoto(socket.id, idAlvo); });
-    socket.on('fazerAposta', (idCandidato) => apostas[socket.id] = idCandidato);
-    socket.on('pedirDado', () => { if(boardAtivo) rolarDado(socket.id); });
+    socket.on('jogarTurno', (idSala) => {
+        let jogadorDaVez = ordemTurno[turnoIndex];
+        if(jogadorDaVez && jogadorDaVez.id === socket.id) {
+            resolverEntrada(idSala, socket.id);
+        }
+    });
+
+    socket.on('enviarVoto', (idAlvo) => {
+        if(jogadores[socket.id]) registrarVoto(socket.id, idAlvo);
+    });
+
+    socket.on('fazerAposta', (idCandidato) => {
+        apostas[socket.id] = idCandidato;
+    });
+
+    socket.on('pedirDado', () => {
+        if(boardAtivo) rolarDado(socket.id);
+    });
 
     socket.on('disconnect', () => {
         if(jogadores[socket.id]) { jogadores[socket.id].vivo = false; delete jogadores[socket.id]; }
+        let humanos = Object.values(jogadores).filter(j => !j.ehBot);
+        if(humanos.length === 0) { jogoAndando = false; jogadores = {}; }
         io.emit('atualizarLista', Object.values(jogadores));
         atualizarContadorOnline();
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`SERVIDOR SQUID BOARD: ${PORT}`); });
+server.listen(PORT, () => { console.log(`SERVIDOR BOARD+BET: ${PORT}`); });
