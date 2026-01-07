@@ -2,335 +2,192 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Super Cat Troll</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Amapá</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { margin: 0; overflow: hidden; background: #5c94fc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { background: #5c94fc; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        #ui { position: absolute; top: 10px; left: 10px; color: white; font-size: 20px; font-weight: bold; text-shadow: 2px 2px 0 #000; }
-        #msg { position: absolute; top: 40%; width: 100%; text-align: center; color: red; font-size: 40px; font-weight: bold; text-shadow: 2px 2px 0 #000; display: none; }
+        body { background-color: #2c3e50; color: white; font-family: 'Roboto', sans-serif; text-align: center; margin: 0; padding: 20px; }
+        
+        /* Telas */
+        .screen { display: none; max-width: 600px; margin: 0 auto; }
+        #login-screen { display: block; } /* Começa aqui */
+
+        /* Estilos Gerais */
+        input { padding: 15px; font-size: 18px; border-radius: 5px; width: 80%; border: none; margin-bottom: 10px; }
+        button { padding: 15px 30px; font-size: 18px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px; }
+        button:hover { background: #2ecc71; }
+        
+        /* Lobby */
+        .player-card { background: #34495e; padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; }
+        
+        /* Jogo */
+        #timer-bar { height: 10px; background: #e74c3c; width: 100%; transition: width linear; margin-bottom: 15px; border-radius: 5px; }
+        .question-box { background: #ecf0f1; color: #2c3e50; padding: 20px; border-radius: 10px; margin-bottom: 20px; font-size: 18px; font-weight: bold; }
+        
+        .opt-btn { background: #34495e; text-align: left; margin-bottom: 8px; border: 2px solid transparent; width: 100%; padding: 10px; border-radius: 5px; cursor: pointer; color: white; font-size: 16px; }
+        .opt-btn:hover { background: #2c3e50; }
+        .opt-btn.selected { border-color: #f1c40f; background: #2c3e50; }
+        .opt-btn.correct { background: #27ae60 !important; }
+        .opt-btn.wrong { background: #c0392b !important; opacity: 0.6; }
+
+        /* Explicação */
+        #feedback-box { background: #f1c40f; color: #000; padding: 15px; border-radius: 10px; margin-top: 20px; display: none; }
     </style>
 </head>
 <body>
 
-    <div id="ui">MORTES: <span id="death-count">0</span> | FASE 1</div>
-    <div id="msg">VOCÊ MORREU!</div>
-    <canvas id="gameCanvas"></canvas>
+    <div id="login-screen" class="screen">
+        <h1>📚 Quiz História do Amapá</h1>
+        <p>Digite seu nome para entrar:</p>
+        <input type="text" id="username" placeholder="Nome">
+        <button onclick="entrar()">ENTRAR NA SALA</button>
+    </div>
 
-<script>
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
+    <div id="lobby-screen" class="screen">
+        <h2>Sala de Espera</h2>
+        <div id="lobby-list"></div>
+        <br>
+        <button id="btn-start" onclick="iniciar()" style="display:none; background:#e67e22">COMEÇAR O QUIZ</button>
+        <p id="wait-msg">Aguardando o líder iniciar...</p>
+    </div>
 
-    // Configuração da Tela
-    const WIDTH = 800;
-    const HEIGHT = 600;
-    canvas.width = WIDTH;
-    canvas.height = HEIGHT;
+    <div id="game-screen" class="screen">
+        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+            <span id="q-num">Questão 1</span>
+            <span id="my-pts">Meus Pontos: 0</span>
+        </div>
+        <div style="width:100%; background:#555; border-radius:5px;"><div id="timer-bar"></div></div>
+        
+        <div class="question-box" id="q-text">...</div>
+        <div id="options-area"></div>
 
-    // --- VARIÁVEIS GLOBAIS ---
-    let deaths = 0;
-    let gameOver = false;
-    let cameraX = 0;
-    
-    // Configuração do Jogador (O Gato)
-    const player = {
-        x: 50, y: 400, w: 30, h: 30,
-        vx: 0, vy: 0,
-        speed: 5, jump: -12, gravity: 0.6,
-        grounded: false,
-        color: 'white'
-    };
+        <div id="feedback-box">
+            <h3>Gabarito:</h3>
+            <p id="feedback-text"></p>
+        </div>
+    </div>
 
-    // Controles
-    const keys = { right: false, left: false, up: false };
+    <div id="result-screen" class="screen">
+        <h1>FIM DE JOGO! 🏆</h1>
+        <div id="ranking-list"></div>
+        <button onclick="location.reload()">JOGAR NOVAMENTE</button>
+    </div>
 
-    // --- MAPA E OBJETOS ---
-    // 1 = Chão, 2 = Bloco ? (Armadilha), 3 = Espinho, 4 = Bandeira, 5 = Bloco Invisível, 6 = Monstro, 7 = Nuvem Falsa
-    // O mapa é desenhado em blocos de 40x40
-    let blocks = [];
-    let enemies = [];
-    let particles = [];
+    <script>
+        const socket = io();
+        let meuId = null;
+        let jaRespondi = false;
 
-    // Level Design (Maldoso)
-    // 0 = ar, 1 = chão, 2 = surpresa, 3 = espinho, 9 = fim
-    // Vamos criar o mapa via código para facilitar armadilhas dinâmicas
-    function initLevel() {
-        blocks = [];
-        enemies = [];
-        player.x = 50; player.y = 400; player.vx = 0; player.vy = 0;
-        cameraX = 0;
-        gameOver = false;
-        document.getElementById('msg').style.display = 'none';
-
-        // Chão Base
-        for(let i=0; i<60; i++) {
-            if(i !== 15 && i !== 16) createBlock(i*40, 560, 1); // Buraco no 15/16
+        // Funções de Navegação
+        function show(id) {
+            document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
+            document.getElementById(id).style.display = 'block';
         }
 
-        // Plataformas e Armadilhas
-        createBlock(300, 400, 2); // Bloco ? normal... ou não?
-        createBlock(340, 400, 1); // Tijolo
-        createBlock(380, 400, 2); // Outro ?
-        createBlock(380, 250, 5); // Bloco Invisível sacana em cima do outro
-
-        createBlock(600, 520, 3); // Espinho
-        createBlock(640, 520, 3); // Espinho
-
-        createBlock(800, 450, 1); 
-        createBlock(840, 450, 1); 
-        createBlock(880, 450, 1); 
-
-        // Nuvem assassina (Inimigo)
-        createEnemy(500, 520, 'goomba');
-        createEnemy(1100, 520, 'goomba');
-
-        // Teto falso que cai
-        createBlock(1300, 200, 7); 
-        createBlock(1340, 200, 7); 
-
-        // Final
-        createBlock(2000, 520, 4); // Bandeira
-    }
-
-    function createBlock(x, y, type) {
-        blocks.push({ x, y, w: 40, h: 40, type, visible: (type !== 5), active: true });
-    }
-
-    function createEnemy(x, y, type) {
-        enemies.push({ x, y, w: 30, h: 30, vx: -2, vy: 0, type, active: true });
-    }
-
-    // --- FÍSICA E LÓGICA ---
-
-    function update() {
-        if(gameOver) return;
-
-        // Movimento Horizontal
-        if (keys.right) player.vx = player.speed;
-        else if (keys.left) player.vx = -player.speed;
-        else player.vx *= 0.8; // Fricção
-
-        player.x += player.vx;
-        checkCollisions(player, 'x');
-
-        // Movimento Vertical (Gravidade)
-        player.vy += player.gravity;
-        player.y += player.vy;
-        player.grounded = false;
-        checkCollisions(player, 'y');
-
-        // Cair no buraco
-        if (player.y > HEIGHT) die();
-
-        // Câmera
-        if (player.x > cameraX + 300) {
-            cameraX = player.x - 300;
+        function entrar() {
+            const nome = document.getElementById('username').value;
+            if(!nome) return alert("Coloque um nome!");
+            socket.emit('entrar', nome);
+            show('lobby-screen');
         }
 
-        // Inimigos
-        enemies.forEach(e => {
-            if(!e.active) return;
-            e.x += e.vx;
-            e.vy += 0.5; // gravidade
-            e.y += e.vy;
+        function iniciar() {
+            socket.emit('iniciarJogo');
+        }
+
+        // SOCKET EVENTOS
+        socket.on('connect', () => meuId = socket.id);
+
+        socket.on('atualizarLista', (lista) => {
+            // Atualiza lista do lobby
+            const div = document.getElementById('lobby-list');
+            div.innerHTML = lista.map(p => 
+                `<div class="player-card">
+                    <span>${p.nome}</span>
+                    <span>${p.pontos} pts</span>
+                 </div>`
+            ).join('');
+
+            // Se for o primeiro (host), mostra botão de start
+            if(lista.length > 0 && lista[0].id === meuId) {
+                document.getElementById('btn-start').style.display = 'block';
+                document.getElementById('wait-msg').style.display = 'none';
+            }
+
+            // Atualiza pontos no jogo
+            const eu = lista.find(p => p.id === meuId);
+            if(eu) document.getElementById('my-pts').innerText = `Pontos: ${eu.pontos}`;
+        });
+
+        socket.on('novaQuestao', (d) => {
+            show('game-screen');
+            jaRespondi = false;
+            document.getElementById('feedback-box').style.display = 'none';
             
-            // Colisão Inimigo com Blocos
-            blocks.forEach(b => {
-                if(b.active && rectIntersect(e.x, e.y, e.w, e.h, b.x, b.y, b.w, b.h)) {
-                    e.y = b.y - e.h;
-                    e.vy = 0;
-                }
+            // Preenche textos
+            document.getElementById('q-text').innerText = d.pergunta;
+            document.getElementById('q-num').innerText = `Questão ${d.atual}/${d.totalQuestoes}`;
+
+            // Cria botões
+            const area = document.getElementById('options-area');
+            area.innerHTML = '';
+            Object.keys(d.opcoes).forEach(key => {
+                let btn = document.createElement('button');
+                btn.className = 'opt-btn';
+                btn.id = `btn-${key}`;
+                btn.innerText = `${key.toUpperCase()}) ${d.opcoes[key]}`;
+                btn.onclick = () => responder(key);
+                area.appendChild(btn);
             });
 
-            // Colisão Jogador com Inimigo
-            if(rectIntersect(player.x, player.y, player.w, player.h, e.x, e.y, e.w, e.h)) {
-                // Se pular na cabeça
-                if(player.vy > 0 && player.y + player.h < e.y + e.h/2) {
-                    e.active = false;
-                    player.vy = -8; // Pula de novo
-                    createParticles(e.x, e.y, 'red');
-                } else {
-                    die();
-                }
-            }
+            // Animação do Timer
+            const bar = document.getElementById('timer-bar');
+            bar.style.transition = 'none';
+            bar.style.width = '100%';
+            setTimeout(() => {
+                bar.style.transition = `width ${d.tempo}s linear`;
+                bar.style.width = '0%';
+            }, 50);
         });
 
-        // Armadilhas de gatilho (Blocos que caem)
-        blocks.forEach(b => {
-            if(b.type === 7 && Math.abs(player.x - b.x) < 40) {
-                b.y += 10; // Cai rápido na cabeça
-            }
-            if(b.type === 7 && rectIntersect(player.x, player.y, player.w, player.h, b.x, b.y, b.w, b.h)) {
-                die();
-            }
-        });
-    }
-
-    function checkCollisions(obj, axis) {
-        for (let b of blocks) {
-            if (!b.active) continue;
-
-            if (rectIntersect(obj.x, obj.y, obj.w, obj.h, b.x, b.y, b.w, b.h)) {
-                
-                // Morrer em espinho
-                if(b.type === 3) { die(); return; }
-                // Ganhar na bandeira
-                if(b.type === 4) { alert("VOCÊ VENCEU O IMPOSSÍVEL!"); initLevel(); return; }
-
-                if(axis === 'x') {
-                    if (obj.vx > 0) obj.x = b.x - obj.w;
-                    else if (obj.vx < 0) obj.x = b.x + b.w;
-                    obj.vx = 0;
-                } else {
-                    if (obj.vy > 0) { // Caindo
-                        obj.y = b.y - obj.h;
-                        obj.grounded = true;
-                        obj.vy = 0;
-                    } else if (obj.vy < 0) { // Batendo cabeça
-                        obj.y = b.y + b.h;
-                        obj.vy = 0;
-                        
-                        // Revelar bloco invisível
-                        if(b.type === 5) {
-                            b.visible = true;
-                            b.type = 1; // vira sólido normal
-                        }
-                        // Bloco Surpresa vira monstro
-                        if(b.type === 2) {
-                            b.type = 1; // vira bloco usado
-                            createEnemy(b.x, b.y - 40, 'troll');
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    function rectIntersect(x1, y1, w1, h1, x2, y2, w2, h2) {
-        return x2 < x1 + w1 && x2 + w2 > x1 && y2 < y1 + h1 && y2 + h2 > y1;
-    }
-
-    function die() {
-        if(gameOver) return;
-        gameOver = true;
-        deaths++;
-        document.getElementById('death-count').innerText = deaths;
-        document.getElementById('msg').style.display = 'block';
-        createParticles(player.x, player.y, 'white');
-        
-        setTimeout(initLevel, 1000);
-    }
-
-    function createParticles(x, y, color) {
-        // Efeito simples visual (não implementado full pra não pesar o código)
-    }
-
-    // --- RENDERIZAÇÃO ---
-
-    function draw() {
-        // Limpar tela
-        ctx.fillStyle = '#5c94fc';
-        ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-        ctx.save();
-        ctx.translate(-cameraX, 0);
-
-        // Desenhar Blocos
-        blocks.forEach(b => {
-            if(!b.active) return;
-            if(!b.visible && b.type === 5) return; // Invisível
-
-            if(b.type === 1 || b.type === 5) {
-                // Chão Marrom
-                ctx.fillStyle = '#A0522D';
-                ctx.fillRect(b.x, b.y, b.w, b.h);
-                ctx.strokeStyle = 'black';
-                ctx.strokeRect(b.x, b.y, b.w, b.h);
-            } else if (b.type === 2) {
-                // Bloco ?
-                ctx.fillStyle = '#FFD700';
-                ctx.fillRect(b.x, b.y, b.w, b.h);
-                ctx.fillStyle = 'black';
-                ctx.font = '20px Arial';
-                ctx.fillText('?', b.x+12, b.y+28);
-            } else if (b.type === 3) {
-                // Espinho
-                ctx.fillStyle = '#DDD';
-                ctx.beginPath();
-                ctx.moveTo(b.x, b.y + b.h);
-                ctx.lineTo(b.x + b.w/2, b.y);
-                ctx.lineTo(b.x + b.w, b.y + b.h);
-                ctx.fill();
-            } else if (b.type === 4) {
-                // Bandeira
-                ctx.fillStyle = 'lime';
-                ctx.fillRect(b.x, b.y - 40, 10, 80);
-                ctx.fillRect(b.x+10, b.y-40, 40, 30);
-            } else if (b.type === 7) {
-                // Bloco que cai (cinza escuro)
-                ctx.fillStyle = '#555';
-                ctx.fillRect(b.x, b.y, b.w, b.h);
-            }
-        });
-
-        // Desenhar Inimigos
-        enemies.forEach(e => {
-            if(e.active) {
-                ctx.fillStyle = e.type === 'troll' ? 'purple' : 'brown'; // Goomba ou Troll
-                // Desenho simples "arredondado"
-                ctx.beginPath();
-                ctx.arc(e.x + e.w/2, e.y + e.h/2, e.w/2, 0, Math.PI*2);
-                ctx.fill();
-                // Olhos
-                ctx.fillStyle = 'white';
-                ctx.fillRect(e.x+5, e.y+5, 8, 8);
-                ctx.fillRect(e.x+18, e.y+5, 8, 8);
-            }
-        });
-
-        // Desenhar Jogador (Gato Branco)
-        if(!gameOver) {
-            ctx.fillStyle = 'white';
-            ctx.fillRect(player.x, player.y, player.w, player.h);
-            // Orelhas
-            ctx.beginPath();
-            ctx.moveTo(player.x, player.y);
-            ctx.lineTo(player.x+5, player.y-10);
-            ctx.lineTo(player.x+10, player.y);
-            ctx.moveTo(player.x+20, player.y);
-            ctx.lineTo(player.x+25, player.y-10);
-            ctx.lineTo(player.x+30, player.y);
-            ctx.fill();
-            // Carinha
-            ctx.fillStyle = 'black';
-            ctx.fillRect(player.x+5, player.y+10, 5, 5); // Olho esq
-            ctx.fillRect(player.x+20, player.y+10, 5, 5); // Olho dir
-            ctx.fillText('w', player.x+10, player.y+25); // Boca
+        function responder(key) {
+            if(jaRespondi) return;
+            jaRespondi = true;
+            document.getElementById(`btn-${key}`).classList.add('selected');
+            // Desabilita cliques
+            document.querySelectorAll('.opt-btn').forEach(b => b.disabled = true);
+            socket.emit('responder', key);
         }
 
-        ctx.restore();
-        requestAnimationFrame(draw);
-        update();
-    }
+        socket.on('resultadoRodada', (d) => {
+            // Pinta a certa de verde
+            const btnCerto = document.getElementById(`btn-${d.correta}`);
+            if(btnCerto) btnCerto.classList.add('correct');
 
-    // --- CONTROLES ---
-    window.addEventListener('keydown', e => {
-        if(e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
-        if(e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
-        if((e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') && player.grounded) {
-            player.vy = player.jump;
-            player.grounded = false;
-        }
-    });
+            // Se errei, pinta a minha de vermelho
+            const selecionado = document.querySelector('.selected');
+            if(selecionado && selecionado.id !== `btn-${d.correta}`) {
+                selecionado.classList.add('wrong');
+            }
 
-    window.addEventListener('keyup', e => {
-        if(e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
-        if(e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
-    });
+            // Mostra explicação
+            const box = document.getElementById('feedback-box');
+            document.getElementById('feedback-text').innerText = d.explicacao;
+            box.style.display = 'block';
+        });
 
-    // Iniciar
-    initLevel();
-    draw();
+        socket.on('fimDeJogo', (ranking) => {
+            show('result-screen');
+            const div = document.getElementById('ranking-list');
+            div.innerHTML = ranking.map((p, i) => 
+                `<div class="player-card" style="font-size: 20px;">
+                    #${i+1} ${p.nome} 
+                    <b>${p.pontos} pts</b>
+                 </div>`
+            ).join('');
+        });
 
-</script>
+    </script>
 </body>
 </html>
