@@ -3,133 +3,176 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quiz Amapá</title>
+    <title>Quiz Amapá Pro</title>
     <script src="/socket.io/socket.io.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { background-color: #2c3e50; color: white; font-family: 'Roboto', sans-serif; text-align: center; margin: 0; padding: 20px; }
+        body { background-color: #121212; color: #e0e0e0; font-family: 'Poppins', sans-serif; text-align: center; margin: 0; padding: 10px; user-select: none; }
         
         /* Telas */
-        .screen { display: none; max-width: 600px; margin: 0 auto; }
-        #login-screen { display: block; } /* Começa aqui */
+        .screen { display: none; max-width: 600px; margin: 0 auto; min-height: 90vh; }
+        #login-screen { display: block; } 
 
-        /* Estilos Gerais */
-        input { padding: 15px; font-size: 18px; border-radius: 5px; width: 80%; border: none; margin-bottom: 10px; }
-        button { padding: 15px 30px; font-size: 18px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px; }
-        button:hover { background: #2ecc71; }
+        /* Componentes */
+        input { padding: 15px; font-size: 18px; border-radius: 8px; width: 80%; border: 1px solid #333; background: #1e1e1e; color: white; margin-bottom: 10px; text-align: center; }
         
+        .btn-action { padding: 15px; width: 100%; font-size: 18px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; margin-top: 10px; transition: 0.2s; }
+        .btn-green { background: #00c853; color: white; }
+        .btn-blue { background: #2962ff; color: white; }
+        .btn-red { background: #d50000; color: white; }
+        .btn-action:disabled { opacity: 0.5; cursor: not-allowed; }
+
         /* Lobby */
-        .player-card { background: #34495e; padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; }
+        .player-card { background: #1e1e1e; padding: 12px; margin: 5px 0; border-radius: 8px; display: flex; justify-content: space-between; border-left: 4px solid #2962ff; }
+        .player-card.me { border-color: #00c853; }
         
-        /* Jogo */
-        #timer-bar { height: 10px; background: #e74c3c; width: 100%; transition: width linear; margin-bottom: 15px; border-radius: 5px; }
-        .question-box { background: #ecf0f1; color: #2c3e50; padding: 20px; border-radius: 10px; margin-bottom: 20px; font-size: 18px; font-weight: bold; }
+        /* Game Area */
+        #timer-bar { height: 8px; background: #ffab00; width: 100%; margin-bottom: 15px; border-radius: 4px; transition: width linear; }
+        .question-box { background: #1e1e1e; padding: 20px; border-radius: 12px; margin-bottom: 15px; font-size: 18px; border: 1px solid #333; min-height: 80px; display:flex; align-items:center; justify-content:center; }
         
-        .opt-btn { background: #34495e; text-align: left; margin-bottom: 8px; border: 2px solid transparent; width: 100%; padding: 10px; border-radius: 5px; cursor: pointer; color: white; font-size: 16px; }
-        .opt-btn:hover { background: #2c3e50; }
-        .opt-btn.selected { border-color: #f1c40f; background: #2c3e50; }
-        .opt-btn.correct { background: #27ae60 !important; }
-        .opt-btn.wrong { background: #c0392b !important; opacity: 0.6; }
+        .opt-btn { background: #2c2c2c; text-align: left; padding: 15px; margin-bottom: 8px; border: 2px solid transparent; width: 100%; border-radius: 8px; cursor: pointer; color: white; font-size: 16px; transition: 0.2s; }
+        .opt-btn:hover { background: #333; }
+        .opt-btn.selected { border-color: #ffab00; background: #3d3d3d; transform: scale(1.02); }
+        .opt-btn.correct { background: #00c853 !important; border-color: #00e676 !important; color: black; font-weight: bold; }
+        .opt-btn.wrong { background: #d50000 !important; opacity: 0.7; }
 
-        /* Explicação */
-        #feedback-box { background: #f1c40f; color: #000; padding: 15px; border-radius: 10px; margin-top: 20px; display: none; }
+        /* Feedback & Config */
+        #feedback-box { background: #fff; color: #000; padding: 15px; border-radius: 8px; margin-top: 20px; display: none; text-align: left; border-left: 6px solid #00c853; }
+        .config-box { background: #1e1e1e; padding: 15px; border-radius: 8px; margin: 10px 0; border: 1px solid #333; }
     </style>
 </head>
 <body>
 
     <div id="login-screen" class="screen">
-        <h1>📚 Quiz História do Amapá</h1>
-        <p>Digite seu nome para entrar:</p>
-        <input type="text" id="username" placeholder="Nome">
-        <button onclick="entrar()">ENTRAR NA SALA</button>
+        <h1 style="color:#00c853">🏰 Hist. do Amapá</h1>
+        <p>Preparação Policial/CBM</p>
+        <input type="text" id="username" placeholder="Seu Apelido">
+        <button class="btn-action btn-green" onclick="entrar()">ENTRAR</button>
     </div>
 
     <div id="lobby-screen" class="screen">
         <h2>Sala de Espera</h2>
         <div id="lobby-list"></div>
-        <br>
-        <button id="btn-start" onclick="iniciar()" style="display:none; background:#e67e22">COMEÇAR O QUIZ</button>
-        <p id="wait-msg">Aguardando o líder iniciar...</p>
+        
+        <div id="host-controls" style="display:none; margin-top:20px;">
+            <div class="config-box">
+                <label>Qtd. Questões:</label>
+                <input type="number" id="qtd-questoes" value="10" min="5" max="141" style="width: 60px; padding: 5px;">
+            </div>
+            <button class="btn-action btn-green" onclick="iniciar()">INICIAR PARTIDA</button>
+        </div>
+
+        <button id="btn-revisar" class="btn-action btn-blue" style="display:none" onclick="iniciarRevisao()">
+            ↺ REFAZER ERROS (<span id="count-erros">0</span>)
+        </button>
+
+        <p id="wait-msg" style="color:#777; margin-top:20px;">Aguardando Líder...</p>
     </div>
 
     <div id="game-screen" class="screen">
-        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; color:#777; font-size:14px; margin-bottom:5px;">
             <span id="q-num">Questão 1</span>
-            <span id="my-pts">Meus Pontos: 0</span>
+            <span id="my-pts">Pts: 0</span>
         </div>
-        <div style="width:100%; background:#555; border-radius:5px;"><div id="timer-bar"></div></div>
+        <div style="width:100%; background:#333; border-radius:4px;"><div id="timer-bar"></div></div>
         
-        <div class="question-box" id="q-text">...</div>
+        <div class="question-box" id="q-text">Carregando...</div>
+        
         <div id="options-area"></div>
 
+        <button id="btn-confirmar" class="btn-action btn-green" onclick="confirmarResposta()" style="display:none;">CONFIRMAR RESPOSTA</button>
+
         <div id="feedback-box">
-            <h3>Gabarito:</h3>
-            <p id="feedback-text"></p>
+            <strong>GABARITO E COMENTÁRIO:</strong><br>
+            <span id="feedback-text">...</span>
         </div>
     </div>
 
     <div id="result-screen" class="screen">
-        <h1>FIM DE JOGO! 🏆</h1>
+        <h1 style="color:#ffab00">RESULTADO 🏆</h1>
         <div id="ranking-list"></div>
-        <button onclick="location.reload()">JOGAR NOVAMENTE</button>
+        <button class="btn-action btn-blue" onclick="location.reload()">VOLTAR AO INÍCIO</button>
     </div>
+
+    <audio id="snd-click" src="https://actions.google.com/sounds/v1/ui/click_on_on.ogg"></audio>
+    <audio id="snd-correct" src="https://actions.google.com/sounds/v1/cartoon/clown_horn.ogg"></audio> 
+    <audio id="snd-wrong" src="https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg"></audio>
+    <audio id="snd-win" src="https://actions.google.com/sounds/v1/cartoon/pop_cork.ogg"></audio>
 
     <script>
         const socket = io();
         let meuId = null;
+        let selecaoAtual = null; // Guarda o que selecionei antes de confirmar
         let jaRespondi = false;
+        
+        // Recupera erros salvos
+        let meusErros = JSON.parse(localStorage.getItem('erros_amapa')) || [];
 
-        // Funções de Navegação
+        // UI UTILS
+        function playSound(id) { document.getElementById(id).play().catch(e=>{}); }
         function show(id) {
             document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
             document.getElementById(id).style.display = 'block';
         }
 
+        // LÓGICA
         function entrar() {
             const nome = document.getElementById('username').value;
-            if(!nome) return alert("Coloque um nome!");
+            if(!nome) return alert("Digite um nome!");
             socket.emit('entrar', nome);
             show('lobby-screen');
+            playSound('snd-click');
+            
+            // Atualiza botão de revisão
+            if(meusErros.length > 0) {
+                document.getElementById('btn-revisar').style.display = 'block';
+                document.getElementById('count-erros').innerText = meusErros.length;
+            }
         }
 
         function iniciar() {
-            socket.emit('iniciarJogo');
+            const qtd = document.getElementById('qtd-questoes').value;
+            socket.emit('iniciarJogo', { qtd: parseInt(qtd) });
+            playSound('snd-click');
         }
 
-        // SOCKET EVENTOS
+        function iniciarRevisao() {
+            if(meusErros.length === 0) return alert("Você não tem erros salvos!");
+            socket.emit('iniciarRevisao', meusErros);
+        }
+
+        // SOCKET
         socket.on('connect', () => meuId = socket.id);
 
         socket.on('atualizarLista', (lista) => {
-            // Atualiza lista do lobby
             const div = document.getElementById('lobby-list');
             div.innerHTML = lista.map(p => 
-                `<div class="player-card">
+                `<div class="player-card ${p.id===meuId?'me':''}">
                     <span>${p.nome}</span>
-                    <span>${p.pontos} pts</span>
+                    <span>${p.pontos}</span>
                  </div>`
             ).join('');
 
-            // Se for o primeiro (host), mostra botão de start
+            // Host Logic
             if(lista.length > 0 && lista[0].id === meuId) {
-                document.getElementById('btn-start').style.display = 'block';
+                document.getElementById('host-controls').style.display = 'block';
                 document.getElementById('wait-msg').style.display = 'none';
             }
 
-            // Atualiza pontos no jogo
             const eu = lista.find(p => p.id === meuId);
-            if(eu) document.getElementById('my-pts').innerText = `Pontos: ${eu.pontos}`;
+            if(eu) document.getElementById('my-pts').innerText = `Pts: ${eu.pontos}`;
         });
 
         socket.on('novaQuestao', (d) => {
             show('game-screen');
             jaRespondi = false;
+            selecaoAtual = null;
             document.getElementById('feedback-box').style.display = 'none';
+            document.getElementById('btn-confirmar').style.display = 'none'; // Esconde confirmar
             
-            // Preenche textos
             document.getElementById('q-text').innerText = d.pergunta;
             document.getElementById('q-num').innerText = `Questão ${d.atual}/${d.totalQuestoes}`;
 
-            // Cria botões
             const area = document.getElementById('options-area');
             area.innerHTML = '';
             Object.keys(d.opcoes).forEach(key => {
@@ -137,11 +180,11 @@
                 btn.className = 'opt-btn';
                 btn.id = `btn-${key}`;
                 btn.innerText = `${key.toUpperCase()}) ${d.opcoes[key]}`;
-                btn.onclick = () => responder(key);
+                btn.onclick = () => selecionar(key);
                 area.appendChild(btn);
             });
 
-            // Animação do Timer
+            // Timer
             const bar = document.getElementById('timer-bar');
             bar.style.transition = 'none';
             bar.style.width = '100%';
@@ -151,27 +194,47 @@
             }, 50);
         });
 
-        function responder(key) {
+        function selecionar(key) {
             if(jaRespondi) return;
-            jaRespondi = true;
+            // Remove seleção anterior
+            document.querySelectorAll('.opt-btn').forEach(b => b.classList.remove('selected'));
+            // Seleciona novo
             document.getElementById(`btn-${key}`).classList.add('selected');
-            // Desabilita cliques
+            selecaoAtual = key;
+            // Mostra botão confirmar
+            document.getElementById('btn-confirmar').style.display = 'block';
+            playSound('snd-click');
+        }
+
+        function confirmarResposta() {
+            if(!selecaoAtual || jaRespondi) return;
+            jaRespondi = true;
+            document.getElementById('btn-confirmar').style.display = 'none';
+            // Trava botões
             document.querySelectorAll('.opt-btn').forEach(b => b.disabled = true);
-            socket.emit('responder', key);
+            socket.emit('responder', selecaoAtual);
         }
 
         socket.on('resultadoRodada', (d) => {
-            // Pinta a certa de verde
             const btnCerto = document.getElementById(`btn-${d.correta}`);
             if(btnCerto) btnCerto.classList.add('correct');
 
-            // Se errei, pinta a minha de vermelho
-            const selecionado = document.querySelector('.selected');
-            if(selecionado && selecionado.id !== `btn-${d.correta}`) {
-                selecionado.classList.add('wrong');
+            let acertei = false;
+            if(selecaoAtual === d.correta) {
+                acertei = true;
+                playSound('snd-correct');
+                // Se acertou um erro antigo, remove da lista
+                meusErros = meusErros.filter(id => id !== d.idQuestao);
+            } else {
+                playSound('snd-wrong');
+                if(selecaoAtual) document.getElementById(`btn-${selecaoAtual}`).classList.add('wrong');
+                // Adiciona aos erros se não estiver lá
+                if(!meusErros.includes(d.idQuestao)) meusErros.push(d.idQuestao);
             }
+            
+            // Salva erros no navegador
+            localStorage.setItem('erros_amapa', JSON.stringify(meusErros));
 
-            // Mostra explicação
             const box = document.getElementById('feedback-box');
             document.getElementById('feedback-text').innerText = d.explicacao;
             box.style.display = 'block';
@@ -179,15 +242,15 @@
 
         socket.on('fimDeJogo', (ranking) => {
             show('result-screen');
+            playSound('snd-win');
             const div = document.getElementById('ranking-list');
             div.innerHTML = ranking.map((p, i) => 
-                `<div class="player-card" style="font-size: 20px;">
+                `<div class="player-card" style="font-size:20px;">
                     #${i+1} ${p.nome} 
-                    <b>${p.pontos} pts</b>
+                    <b>${p.pontos}</b>
                  </div>`
             ).join('');
         });
-
     </script>
 </body>
 </html>
